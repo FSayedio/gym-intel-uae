@@ -1,0 +1,11 @@
+# macOS metadata
+.DS_Store
+
+# Local configuration: may contain passwords
+.env
+.env.*
+!.env.example
+
+# Elixir build outputs and downloaded dependencies
+_build/
+deps/
