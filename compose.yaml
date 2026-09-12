@@ -26,8 +26,11 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      DATABASE_NAME: gym_intel_dev
+      DATABASE_USER: gym_intel
       DATABASE_HOST: postgres
       DATABASE_PORT: "5432"
+      DATABASE_POOL_SIZE: "5"
 
   grafana:
     image: grafana/grafana:13.2
