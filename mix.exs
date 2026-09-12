@@ -13,7 +13,7 @@ defmodule GymIntel.MixProject do
 
   def application do
     [
-      extra_applications: [:logger],
+      extra_applications: [:logger, :crypto],
       mod: {GymIntel.Application, []}
     ]
   end
@@ -23,7 +23,8 @@ defmodule GymIntel.MixProject do
       {:ecto_sql, "~> 3.14.0"},
       {:postgrex, "~> 0.22.4"},
       {:oban, "~> 2.24.1"},
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:nimble_csv, "~> 1.3.0"}
     ]
   end
 end
