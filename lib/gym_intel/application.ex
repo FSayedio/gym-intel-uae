@@ -3,7 +3,10 @@ defmodule GymIntel.Application do
 
   @impl true
   def start(_type, _args) do
-    children = [GymIntel.DatabaseProbe]
+    children = [
+      GymIntel.Repo,
+      {Oban, Application.fetch_env!(:gym_intel, Oban)}
+    ]
 
     Supervisor.start_link(children,
       strategy: :one_for_one,

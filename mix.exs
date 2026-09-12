@@ -7,7 +7,7 @@ defmodule GymIntel.MixProject do
       version: "0.1.0",
       elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
-      deps: []
+      deps: deps()
     ]
   end
 
@@ -15,6 +15,15 @@ defmodule GymIntel.MixProject do
     [
       extra_applications: [:logger],
       mod: {GymIntel.Application, []}
+    ]
+  end
+
+  defp deps do
+    [
+      {:ecto_sql, "~> 3.14.0"},
+      {:postgrex, "~> 0.22.4"},
+      {:oban, "~> 2.24.1"},
+      {:jason, "~> 1.4"}
     ]
   end
 end
