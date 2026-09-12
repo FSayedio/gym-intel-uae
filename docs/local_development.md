@@ -28,6 +28,52 @@ Expected evidence:
 
 Open Grafana at <http://127.0.0.1:3000>.
 
+## Connect Grafana to memberships
+
+After starting the stack and applying migrations, grant a dedicated local reader
+access to the memberships table and load the version-controlled data source:
+
+```bash
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gym_intel -d gym_intel_dev < priv/grafana_reader.sql
+docker compose up -d grafana
+curl --fail http://127.0.0.1:3000/api/datasources/uid/gym-intel-memberships/health
+```
+
+Expected: the health response reports a successful database connection. This is
+different from `/api/health`, which checks Grafana itself, not our memberships
+connection. In Grafana, Connections > Data sources lists Gym Intel Memberships.
+
+The YAML uses `postgres:5432` because Grafana connects across the Compose network,
+not through the host port. The dedicated `gym_intel_grafana` login is granted only
+SELECT on memberships, not write access or access to Oban job contents. It uses
+the existing local trust authentication; this is not a production security setup.
+Anonymous Grafana Admin and PostgreSQL trust authentication remain limitations.
+After recreating the database volume, repeat reader setup after migrations.
+
+## Membership dashboard
+
+Open <http://127.0.0.1:3000/d/gym-intel-offers>. The dashboard JSON and provider
+YAML live under `grafana/`; Compose mounts them read-only. Edit these files in
+Git rather than saving dashboard changes through the UI. Grafana polls dashboard
+files every 30 seconds. This does not fetch new gym facts or automatically import
+CSV changes. Use the dashboard Refresh button after an import.
+
+Expected after importing the initial CSV: three bars (GymNation 209, PureGym 199,
+Warehouse 363 AED/month) and three terms/source rows dated 2026-09-12. Blank
+commitments and joining fees display Unknown, not zero. Prices come from SQL,
+not hardcoded panel values.
+
+Both panels select the latest observation date across memberships, then include
+only single-branch offers with monthly billing and a known advertised price.
+They ignore the Grafana time picker, which is hidden. Different dates are never
+mixed; an incomplete latest collection can reduce the number of displayed gyms.
+No eligible observations produces No data. Other billing periods, access scopes,
+and unknown prices are deliberately excluded from this first view.
+
+This is an advertised-charge overview, not an all-in-cost or value ranking.
+Terms, tax treatment, offer type and facilities may differ. Read the warning and
+source notes; do not infer that alphabetically ordered bars are equivalent offers.
+
 ## Queue a membership CSV
 
 The project `data` directory is mounted read-only at `/app/data`. Collect and
@@ -99,6 +145,7 @@ docker compose down
 ```
 
 This stops the containers but preserves the named PostgreSQL and Grafana volumes.
-A Grafana PostgreSQL data source and comparison dashboards are still unfinished.
+The first advertised-charge dashboard is available; broader comparison views
+and reproducibility checks remain unfinished.
 Source verification remains partial: unknown fees, commitments, tax treatment,
 and offer type must not be presented as confirmed values.

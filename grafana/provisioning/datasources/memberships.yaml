@@ -1,0 +1,19 @@
+apiVersion: 1
+
+datasources:
+  - name: Gym Intel Memberships
+    uid: gym-intel-memberships
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: postgres:5432
+    user: gym_intel_grafana
+    editable: false
+    jsonData:
+      database: gym_intel_dev
+      sslmode: disable
+      postgresVersion: 1800
+      timescaledb: false
+      maxOpenConns: 2
+      maxIdleConns: 2
+      maxIdleConnsAuto: false
+      connMaxLifetime: 14400

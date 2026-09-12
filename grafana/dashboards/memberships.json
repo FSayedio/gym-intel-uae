@@ -1,0 +1,180 @@
+{
+  "uid": "gym-intel-offers",
+  "title": "Gym Intel UAE — Membership offers",
+  "tags": [
+    "gym-intel",
+    "pricing"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "timezone": "Asia/Dubai",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timepicker": {
+    "hidden": true
+  },
+  "refresh": "",
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Read this comparison correctly",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 5
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### Advertised charges, not all-in costs\nSingle-branch offers billed monthly, from the **latest observation date in our database**. The table shows that date; it is not a live price feed. Initial coverage: three Dubai branches, **not the entire UAE**.\n\nCommitments, fees, tax treatment, offer type and included facilities may differ or be unknown. **Do not interpret these bars as a like-for-like value ranking or total contract cost.** Unknown is not zero. Consult each source and the conditions table. No eligible rows means no comparison—not free membership."
+      }
+    },
+    {
+      "id": 2,
+      "type": "barchart",
+      "title": "Advertised monthly charge · not total cost",
+      "description": "Same single-branch access category and monthly billing. Alphabetical order. Unknown-priced offers are excluded; different plans are not asserted to be equivalent.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "gym-intel-memberships"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "gym-intel-memberships"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT brand_name AS \"Offer\", advertised_price_aed::double precision AS \"Advertised charge\" FROM memberships WHERE observed_on = (SELECT MAX(observed_on) FROM memberships) AND access_scope = 'single_branch' AND billing_period_months = 1 AND advertised_price_aed IS NOT NULL ORDER BY brand_name, branch_name, plan_name, id"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "axisLabel": "AED per month"
+          },
+          "decimals": 0,
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "noValue": "Unknown"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "Offer",
+        "showValue": "always",
+        "groupWidth": 0.7,
+        "barWidth": 0.8,
+        "stacking": "none",
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single"
+        },
+        "xTickLabelMaxLength": 120
+      }
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Terms and evidence · scroll right for source and full notes",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "gym-intel-memberships"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "gym-intel-memberships"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT brand_name AS \"Gym\", branch_name AS \"Branch\", plan_name AS \"Plan\", advertised_price_aed::double precision AS \"AED/month\", minimum_commitment_months AS \"Commitment months\", joining_fee_aed::double precision AS \"Joining fee AED\", COALESCE(offer_type, 'Unknown') AS \"Offer type\", observed_on::text AS \"Observed\", source_url AS \"Source\", notes AS \"Conditions / unknowns\" FROM memberships WHERE observed_on = (SELECT MAX(observed_on) FROM memberships) AND access_scope = 'single_branch' AND billing_period_months = 1 AND advertised_price_aed IS NOT NULL ORDER BY brand_name, branch_name, plan_name, id"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unknown",
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Source"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Official source",
+                    "url": "${__value.raw}",
+                    "targetBlank": true
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 240
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Conditions / unknowns"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 850
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "md",
+        "footer": {
+          "show": false
+        }
+      }
+    }
+  ]
+}
