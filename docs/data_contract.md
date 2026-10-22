@@ -45,10 +45,10 @@ share `billing_period_months = 1`. After: fresh, supported observations can carr
 different payment/renewal classifications rather than being silently grouped.
 This is a source-collection example, not a backfill or new imported gym record.
 
-Missing or contradictory classification evidence excludes an offer from the
-filtered comparison, but remains visible as evidence. The application validates
-the codes, PostgreSQL also constrains them, and Grafana requires known matching
-codes. No layer can determine these facts from omitted source wording.
+Missing classifications remain Unknown in the graph's per-bar terms; they are
+not inferred from monthly billing. The application validates the codes and
+PostgreSQL also constrains them. The simplified graph plots advertised charges,
+not matched contracts. No layer can recover facts omitted by the collector.
 
 ### VAT basis and separate mandatory charges
 
@@ -57,12 +57,10 @@ universal statement about the operator or the tax treatment of joining/admin
 fees. No rate is assumed and no tax-inclusive price is automatically calculated.
 Unsupported tax wording remains in notes with the structured value unknown.
 
-Before: two quoted AED 200 monthly prices could be grouped even though one
-includes VAT and the other excludes it. After: the filtered chart requires the
-selected known VAT basis; unknown or conflicting tax evidence cannot qualify.
-The excluded-VAT group compares pre-VAT advertised charges, not amounts payable.
-The historical overview retains unaltered source amounts with an explicit
-mixed/unknown-tax warning, rather than pretending those amounts are normalized.
+Two quoted AED 200 prices can have different VAT treatment. The simplified
+price graph keeps raw advertised amounts and discloses VAT in each bar's terms.
+It does not filter to a shared VAT basis, convert prices, assume a tax rate, or
+claim equivalent payable amounts. Unknown VAT stays Unknown.
 
 Keep joining and one-time admin charges separate. A source stating no joining
 fee proves `joining_fee_aed = 0`, not `admin_fee_aed = 0`. For example, a quoted
@@ -92,89 +90,91 @@ may still be unknown. Optional add-ons must not become mandatory admin fees.
 - Do not calculate a total contract cost while any required fee or commitment value is unknown.
 - Keep source wording in `notes` when a plan does not fit the controlled values cleanly.
 
-## Current chart selection and plan normalization
+## Dated collection — 22 October 2026
 
-The monthly chart has an explicit selected set of branch/plan identities:
+`data/memberships-2026-10-22.csv` contains three observations in the current
+17-column format. It is a new snapshot, not a rewrite of the September CSV.
 
-- GymNation / Downtown Dubai / Core
-- PureGym / Dubai Al Barsha / CORE
-- The Warehouse Gym / IBN Battuta Mall / Light Monthly
+| Offer | Advertised monthly charge | Known minimum | Remaining limits |
+| --- | --- | --- | --- |
+| GymNation Downtown / Core | AED 209 | 12 months | AED 199 joining and AED 30 admin are separate charges from the same-day public selector audit; no all-in total is calculated. |
+| PureGym Dubai Al Barsha / CORE | AED 199 | No minimum commitment | AED 89 joining from the same-day public selector audit. Admin fee unknown; cancellation-notice wording conflicts between help and terms. |
+| La Maison de la Masse Al Quoz 2 / Monthly | AED 1,500 | No commitment | VAT, payment structure, renewal and joining/admin fees unknown. Membership capped at 30 spots; availability not verified. |
 
-The SQL in `grafana/dashboards/memberships.json` defines that set. It does not
-automatically expand when a new gym, branch, or plan is imported. Change the
-selection deliberately and update its regression fixtures when changing scope.
+La Maison's [official pricing](https://lamaisondelamasse.com/pricing/) explicitly
+identifies the Monthly open-gym plan and no commitment. Its
+[membership page](https://lamaisondelamasse.com/private-gym-dubai/) identifies
+access to the Al Quoz facility; the published address is in Al Quoz 2. Optional
+coaching is not part of this price. Longer-term monthly equivalents are not
+recorded as monthly-billed offers. No enquiry or signup was submitted.
 
-A complete chart date has a single known advertised price for every selected
-offer, with single-branch access and monthly billing. Identical prices supported
-by multiple rows produce one bar; conflicting prices make that offer/date
-ineligible. The chart selects the newest complete date, so a newer annual plan,
-unselected plan, partial refresh, or unknown price cannot erase an older complete
-comparison. With no complete date, it returns no comparison. The query returns
-the selected date as `Observed`; these observations are not a live price feed.
+The existing same-day selector audit below supplies the GymNation/PureGym
+amounts and branch selections; publicly accessible supporting terms were
+checked again for the new collection. See each CSV row's notes for field-level
+sources and unresolved wording. An observation date is not a publication date.
 
-This is a date-based completeness rule for the existing MVP, not the future
-collection-cycle model. Same-day refreshes cannot yet be identified as separate
-cycles. Completeness concerns the advertised charge only; it does not establish
-equivalent facilities, commitments, fees, or total costs.
+After importing both CSVs: six observations across four brands. The simplified
+graph shows four latest recorded offer prices, including Warehouse's September
+record. Its observation date remains metadata, not a legend suffix. GymNation's known 12-month minimum differs
+from PureGym's zero minimum; La Maison still lacks VAT/payment/renewal terms.
+Those conditions remain disclosed, not silently normalized into equivalence.
 
-### Normalize documented conditions, not marketing names
+## Graph and compact conditions table
 
-Keep `plan_name` exactly as published. `Core`, `CORE`, and `Light Monthly` are
-source identifiers, not cross-operator tiers. Never rename them all `Basic` or
-assume matching words imply matching benefits. Existing typed fields are the
-shared vocabulary; Grafana's SQL provides readable labels without changing
-stored facts:
+The dashboard now contains one vertical bar chart with a five-column conditions
+table directly beneath it and a short visible evidence warning, without filter
+variables. This replaces the previous overview / filtered comparison / evidence
+table interface. The comparison filters were removed because the current small
+dataset cannot form a useful matching group; this is a presentation change,
+not a claim that the missing evidence has been resolved.
 
-| Stored field/value | Display meaning |
-| --- | --- |
-| `single_branch` | Single branch |
-| `multiple_named_branches` | Specified branches |
-| `all_uae_branches` | All operator UAE branches |
-| `billing_period_months = 1` | Payment covers 1 month |
-| `minimum_commitment_months = 0` | No minimum commitment, only when sourced |
-| Missing commitment | Unknown, never equivalent to zero |
+Gym names appear in a colour-coded legend on the right, not below the bars.
+Grafana transforms each returned offer into a named numeric field and retains
+its source/date/terms as field labels. A separate blank category supplies the
+bar grouping only; it is not a membership observation or an additional price.
+Adding the compact table does not alter the graph's price query or selection.
 
-The dashboard separates these questions:
+- Bars show exact recorded monthly membership charges for single-branch offers.
+  Joining/admin fees are disclosed separately, never added to the monthly bar.
+- There is no fixed gym list or top-three limit. Each brand/branch/original-plan
+  identity contributes its latest recorded observation when eligible.
+- Select the latest date before checking price, billing and access. A newer
+  unknown, annual, multi-branch or conflicting observation does not fall back
+  to an older known monthly price.
+- Same-date duplicate evidence produces one bar. Conflicting price or material
+  terms exclude that offer rather than choosing an arbitrary minimum or
+  collapsing Unknown into a known value.
+- The table shows exactly the graph's selected offers in the same alphabetical
+  order, not all historical records. Its five visible columns are Gym, Branch,
+  Minimum commitment, Joining / admin fees, and Payment / renewal / VAT.
+  Each combined cell labels its separate facts. Missing terms say Unknown;
+  joining and admin fees are not summed or assumed to be zero. VAT describes
+  the membership price only, not fee tax treatment.
+- Both queries share identical selection CTEs, eligibility and ordering, guarded
+  by tests including empty, unknown, conflicting and multiple-offer cases.
+- Dates may differ between offers. Retain each observation date in source
+  details and internal records; do not append freshness labels to gym names.
+  No recorded price is guaranteed current. Warehouse's September access scope
+  remains unresolved and is disclosed in a visible warning as well as the panel
+  description. Recorded prices are not live quotes or equivalent memberships.
+- Bars are alphabetical, not a cheapest-gym or best-value ranking.
+- Click a bar to read its source-check date and terms (commitment, joining fee,
+  admin fee, VAT, payment and renewal) and open the official source. Linked gym
+  names in the table also expose the source and check date. Full source notes,
+  original plan and supporting URLs remain in query results via Inspect data;
+  evidence columns are retained but hidden in the compact table. There are no
+  separate checked/source or key-caveat columns.
+- Multiple offers for the same brand have branch and original plan appended to
+  their labels; marketing names are never converted into invented equal tiers.
+- Historical observations remain in PostgreSQL and the original CSV. Removing
+  the on-dashboard history table does not delete them.
+- No new data collection, import behaviour, permissions, migrations or services
+  are required for this presentation change.
 
-1. **Offer overview:** historical advertised monthly charges for the selected
-   set on its last complete date, alphabetical rather than a value ranking.
-   Gym names are short labels; when a selection contains multiple offers for
-   one brand, branch and original plan disambiguate its bars.
-2. **Filtered monthly-charge comparison:** uses that same overview date and
-   requires matching access, monthly billing, and the selected **known** minimum
-   commitment, payment structure, renewal policy and price VAT status for at least two distinct
-   gym brands. Unknown or conflicting evidence in any of those dimensions
-   excludes an offer. Matching terms never
-   imply equivalent fees, tax rates, promotions, facilities, or benefits.
-   This is not a fully like-for-like membership or all-in-cost comparison.
-3. **Evidence history:** all recorded observations, including unknown prices,
-   non-monthly offers and older dates. Original names, readable terms, native
-   payment period, sources and notes remain visible. Chart filters do not hide
-   this history. An annual price is not labelled `AED/month`.
-
-The current access selection is fixed to Single branch, consistent with the
-existing explicit offer set; commitment, payment, renewal and price VAT basis have selectors. Payment,
-renewal and VAT selectors contain only the supported known codes, with no combined
-All/Unknown choice. Commitment options include
-No minimum commitment plus actual known durations from the selected records.
-No `All` or `Unknown` option merges incompatible durations. Fewer than two
-qualifying brands produces **Not enough comparable offers** and no filtered
-bars. A newer partial collection still does not replace the overview date;
-the filtered chart does not silently find a different date to fill itself.
-
-Before: branded names and three prices could suggest equivalent memberships.
-After: original names remain evidence, shared conditions are explicit, and a
-filtered charge comparison appears only when its narrower criteria are met.
-Manual official-source verification remains necessary: numeric validation and
-SQL cannot discover omitted wording or certify that a recorded scope is true.
-
-No all-in-cost calculation is implemented. The current model has separate
-joining/admin fee fields and a VAT flag for the membership price only. This is
-not complete mandatory-fee coverage or a tax model for every charge. Extending
-that coverage requires a deliberate model/import change, not folding other fees
-into existing fields or silently treating missing fees as zero. The filtered
-monthly-charge chart does not add upfront fees, and fee equality/completeness
-is not one of its qualification claims.
+This graph answers “what monthly charges have we recorded, and under what
+documented conditions?” It does not establish equivalent memberships, current
+availability, a shared collection date or all-in costs. A future matched
+comparison needs enough genuinely comparable data before controls are added.
 
 ## Validation for the first iteration
 
@@ -210,10 +210,14 @@ These pages were checked on the date above; their publication dates were not est
 
 ## Comparability source audit — 22 October 2026
 
-Read-only research, **not imported observations**. The CSV and development
-database remain the 12 September records. Later evidence must not be backdated
-or silently applied to older records. No personal information, purchase or
-contract acceptance was submitted during these checks.
+References to filtered charts later in this audit describe the retired interface,
+not the current single graph. They preserve the earlier assessment history.
+
+This section records the read-only audit that preceded the dated collection
+above. Research candidates here are **not automatically imported observations**.
+Later evidence must not be backdated or silently applied to older records.
+No personal information, purchase or contract acceptance was submitted during
+these checks.
 
 - **GymNation Downtown / Core:** the [branch page](https://gymnation.com/en-ae/gymsnearme/downtown-dubai/)
   advertises AED 209/month and single-gym access. The linked [joining flow](https://gymnation.com/en-ae/gymsnearme/gymmembership/?city=Dubai&location=Downtown+Dubai&membership=GymNation+Core+Membership),

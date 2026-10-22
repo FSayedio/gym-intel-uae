@@ -6,7 +6,7 @@
     "pricing"
   ],
   "schemaVersion": 39,
-  "version": 3,
+  "version": 8,
   "editable": false,
   "timezone": "Asia/Dubai",
   "time": {
@@ -21,207 +21,30 @@
     {
       "id": 1,
       "type": "text",
-      "title": "Two views, two different questions",
+      "title": "About these offers",
       "gridPos": {
         "x": 0,
         "y": 0,
         "w": 24,
-        "h": 6
+        "h": 4
       },
       "options": {
         "mode": "markdown",
-        "content": "### Historical charges, not equivalent memberships\n**Overview:** unaltered advertised charges for three selected Dubai offers on their last complete monthly-price date; tax treatment may be unknown or differ. Original plan names and readable access/billing/commitment terms remain in the evidence table. Marketing names are not converted into invented equivalent tiers.\n\n**Filtered chart:** monthly charges with matching access, known commitment, payment structure, renewal policy and membership-price VAT basis, for **at least two gyms** on the overview date. Unknown/conflicting terms are excluded. Upfront fees, tax rates, cancellation notice, promotions and benefits may still differ; this is **not an all-in-cost or value ranking**. VAT-excluded groups show pre-VAT charges, not amounts payable. No tax rate or missing fee is assumed. Joining/admin fees are disclosed separately, not added to the bars. Filters do not hide the overview or evidence history.\n\n**Freshness:** check each **Observed** date in the evidence history; this is not a live feed. The separately documented 22 October audit found extra fees and unresolved Warehouse access. Do not assume every historical record incorporates those findings."
+        "content": "**Recorded offers, not live quotes or equivalent memberships.** Dates and terms differ; **Unknown is not zero**. Click a bar or gym name for its official source and check date. Fees are separate; VAT status covers the membership price only.\n\n**Warehouse:** historical access scope remains unresolved. Full source notes: panel menu → Inspect → Data."
       }
     },
     {
       "id": 2,
       "type": "barchart",
-      "title": "Historical advertised monthly charges · tax and terms may differ",
-      "description": "Unaltered historical source amounts on the last complete selected date, not tax-normalized prices or equivalent memberships. Unknown/mixed VAT and other terms remain in evidence; use the filtered chart for a known matching VAT basis.",
+      "title": "Advertised monthly gym charges — terms and dates differ",
+      "description": "Latest recorded single-branch monthly offer for each gym/branch/plan, alphabetical, not a cheapest or best-gym ranking. Click a bar for its observation date, commitment, joining/admin fees, VAT, renewal and official source. Unknown is not zero. Only the monthly membership charge is plotted; no total-cost or equivalent-benefits claim. Observation dates are retained in source details rather than appended to gym names; recorded prices are not live quotes. Warehouse's historical access scope remains unresolved. A newer unknown, annual or conflicting observation does not fall back to an older price. The compact table below shows the same selected offers and their conditions. Full source notes remain in Inspect data.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "gym-intel-memberships"
       },
       "gridPos": {
         "x": 0,
-        "y": 6,
-        "w": 24,
-        "h": 9
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "gym-intel-memberships"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "WITH expected_offers (brand_name, branch_name, plan_name) AS (\n  VALUES\n    ('GymNation', 'Downtown Dubai', 'Core'),\n    ('PureGym', 'Dubai Al Barsha', 'CORE'),\n    ('The Warehouse Gym', 'IBN Battuta Mall', 'Light Monthly')\n), eligible AS (\n  SELECT m.brand_name, m.branch_name, m.plan_name, m.observed_on, m.advertised_price_aed\n  FROM memberships AS m\n  JOIN expected_offers USING (brand_name, branch_name, plan_name)\n  WHERE m.access_scope = 'single_branch'\n    AND m.billing_period_months = 1\n    AND m.advertised_price_aed IS NOT NULL\n), offers_by_date AS (\n  SELECT brand_name, branch_name, plan_name, observed_on,\n    MIN(advertised_price_aed) AS advertised_price_aed\n  FROM eligible\n  GROUP BY brand_name, branch_name, plan_name, observed_on\n  HAVING COUNT(DISTINCT advertised_price_aed) = 1\n), complete_dates AS (\n  SELECT observed_on\n  FROM offers_by_date\n  GROUP BY observed_on\n  HAVING COUNT(*) = (SELECT COUNT(*) FROM expected_offers)\n)\nSELECT CASE WHEN COUNT(*) OVER (PARTITION BY brand_name) > 1\n  THEN brand_name || ' · ' || branch_name || ' · ' || plan_name\n  ELSE brand_name END AS \"Offer\",\n  advertised_price_aed::double precision AS \"Advertised charge\",\n  observed_on::text AS \"Observed\"\nFROM offers_by_date\nWHERE observed_on = (SELECT MAX(observed_on) FROM complete_dates)\nORDER BY brand_name, branch_name, plan_name"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "custom": {
-            "axisLabel": "AED per month"
-          },
-          "decimals": 0,
-          "min": 0,
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          },
-          "noValue": "Unknown"
-        },
-        "overrides": []
-      },
-      "options": {
-        "orientation": "horizontal",
-        "xField": "Offer",
-        "showValue": "always",
-        "groupWidth": 0.7,
-        "barWidth": 0.8,
-        "stacking": "none",
-        "legend": {
-          "showLegend": false
-        },
-        "tooltip": {
-          "mode": "single"
-        },
-        "xTickLabelMaxLength": 120
-      }
-    },
-    {
-      "id": 5,
-      "type": "stat",
-      "title": "Filtered comparison availability",
-      "description": "An explicit result, rather than presenting one gym as a comparison.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "gym-intel-memberships"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 15,
-        "w": 24,
-        "h": 4
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "gym-intel-memberships"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "WITH expected_offers (brand_name, branch_name, plan_name) AS (\n  VALUES\n    ('GymNation', 'Downtown Dubai', 'Core'),\n    ('PureGym', 'Dubai Al Barsha', 'CORE'),\n    ('The Warehouse Gym', 'IBN Battuta Mall', 'Light Monthly')\n), eligible AS (\n  SELECT m.brand_name, m.branch_name, m.plan_name, m.observed_on, m.advertised_price_aed\n  FROM memberships AS m\n  JOIN expected_offers USING (brand_name, branch_name, plan_name)\n  WHERE m.access_scope = 'single_branch'\n    AND m.billing_period_months = 1\n    AND m.advertised_price_aed IS NOT NULL\n), offers_by_date AS (\n  SELECT brand_name, branch_name, plan_name, observed_on,\n    MIN(advertised_price_aed) AS advertised_price_aed\n  FROM eligible\n  GROUP BY brand_name, branch_name, plan_name, observed_on\n  HAVING COUNT(DISTINCT advertised_price_aed) = 1\n), complete_dates AS (\n  SELECT observed_on\n  FROM offers_by_date\n  GROUP BY observed_on\n  HAVING COUNT(*) = (SELECT COUNT(*) FROM expected_offers)\n), matching_terms AS (\n  SELECT o.brand_name, o.branch_name, o.plan_name, o.observed_on,\n    o.advertised_price_aed\n  FROM offers_by_date AS o\n  JOIN memberships AS m USING (brand_name, branch_name, plan_name, observed_on)\n  WHERE o.observed_on = (SELECT MAX(observed_on) FROM complete_dates)\n  GROUP BY o.brand_name, o.branch_name, o.plan_name, o.observed_on, o.advertised_price_aed\n  HAVING COUNT(DISTINCT ROW(m.access_scope, m.billing_period_months, m.minimum_commitment_months, m.payment_structure, m.renewal_policy, m.price_vat_status)) = 1\n    AND MIN(m.access_scope) = ${access_scope:sqlstring}\n    AND MIN(m.billing_period_months) = 1\n    AND MIN(m.minimum_commitment_months)::text = ${commitment:sqlstring}\n    AND MIN(m.payment_structure) = ${payment_structure:sqlstring}\n    AND MIN(m.renewal_policy) = ${renewal_policy:sqlstring}\n    AND MIN(m.price_vat_status) = ${price_vat_status:sqlstring}\n), qualifying AS (\n  SELECT * FROM matching_terms\n  WHERE (SELECT COUNT(DISTINCT brand_name) FROM matching_terms) >= 2\n)\nSELECT CASE\n  WHEN NOT EXISTS (SELECT 1 FROM complete_dates)\n    THEN 'Not enough comparable offers — no complete monthly observation date'\n  WHEN (SELECT COUNT(DISTINCT brand_name) FROM matching_terms) = 1\n    THEN 'Not enough comparable offers — 1 gym matches; at least 2 required'\n  WHEN (SELECT COUNT(DISTINCT brand_name) FROM matching_terms) < 2\n    THEN 'Not enough comparable offers — ' ||\n      (SELECT COUNT(DISTINCT brand_name) FROM matching_terms)::text ||\n      ' gyms match; at least 2 required'\n  ELSE (SELECT COUNT(DISTINCT brand_name) FROM matching_terms)::text ||\n    ' gyms match access and commitment, payment, renewal and price VAT basis — fees, tax rates, notice and benefits may differ'\n  END AS \"Comparison status\""
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "string",
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          },
-          "noValue": "Comparison status unavailable — check query"
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "/.*/"
-        },
-        "orientation": "auto",
-        "textMode": "value",
-        "colorMode": "none",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "wideLayout": true,
-        "text": {
-          "valueSize": 20
-        }
-      }
-    },
-    {
-      "id": 4,
-      "type": "barchart",
-      "title": "Monthly advertised charges · ${price_vat_status:text}",
-      "description": "Requires the same selected access, known commitment, payment structure, renewal policy and membership-price VAT basis for at least two brands on the overview date. Excluded-VAT prices are pre-VAT charges, not payable totals. No assumed rates, tax conversion or upfront-fee addition. Unknown/conflicting classification excludes an offer. Fees, tax rates, cancellation notice and benefits may differ.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "gym-intel-memberships"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 19,
-        "w": 24,
-        "h": 9
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "gym-intel-memberships"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "WITH expected_offers (brand_name, branch_name, plan_name) AS (\n  VALUES\n    ('GymNation', 'Downtown Dubai', 'Core'),\n    ('PureGym', 'Dubai Al Barsha', 'CORE'),\n    ('The Warehouse Gym', 'IBN Battuta Mall', 'Light Monthly')\n), eligible AS (\n  SELECT m.brand_name, m.branch_name, m.plan_name, m.observed_on, m.advertised_price_aed\n  FROM memberships AS m\n  JOIN expected_offers USING (brand_name, branch_name, plan_name)\n  WHERE m.access_scope = 'single_branch'\n    AND m.billing_period_months = 1\n    AND m.advertised_price_aed IS NOT NULL\n), offers_by_date AS (\n  SELECT brand_name, branch_name, plan_name, observed_on,\n    MIN(advertised_price_aed) AS advertised_price_aed\n  FROM eligible\n  GROUP BY brand_name, branch_name, plan_name, observed_on\n  HAVING COUNT(DISTINCT advertised_price_aed) = 1\n), complete_dates AS (\n  SELECT observed_on\n  FROM offers_by_date\n  GROUP BY observed_on\n  HAVING COUNT(*) = (SELECT COUNT(*) FROM expected_offers)\n), matching_terms AS (\n  SELECT o.brand_name, o.branch_name, o.plan_name, o.observed_on,\n    o.advertised_price_aed\n  FROM offers_by_date AS o\n  JOIN memberships AS m USING (brand_name, branch_name, plan_name, observed_on)\n  WHERE o.observed_on = (SELECT MAX(observed_on) FROM complete_dates)\n  GROUP BY o.brand_name, o.branch_name, o.plan_name, o.observed_on, o.advertised_price_aed\n  HAVING COUNT(DISTINCT ROW(m.access_scope, m.billing_period_months, m.minimum_commitment_months, m.payment_structure, m.renewal_policy, m.price_vat_status)) = 1\n    AND MIN(m.access_scope) = ${access_scope:sqlstring}\n    AND MIN(m.billing_period_months) = 1\n    AND MIN(m.minimum_commitment_months)::text = ${commitment:sqlstring}\n    AND MIN(m.payment_structure) = ${payment_structure:sqlstring}\n    AND MIN(m.renewal_policy) = ${renewal_policy:sqlstring}\n    AND MIN(m.price_vat_status) = ${price_vat_status:sqlstring}\n), qualifying AS (\n  SELECT * FROM matching_terms\n  WHERE (SELECT COUNT(DISTINCT brand_name) FROM matching_terms) >= 2\n)\nSELECT CASE WHEN COUNT(*) OVER (PARTITION BY brand_name) > 1\n  THEN brand_name || ' · ' || branch_name || ' · ' || plan_name\n  ELSE brand_name END AS \"Offer\",\n  advertised_price_aed::double precision AS \"Advertised charge\",\n  observed_on::text AS \"Observed\"\nFROM qualifying\nORDER BY brand_name, branch_name, plan_name"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "custom": {
-            "axisLabel": "AED per month"
-          },
-          "decimals": 0,
-          "min": 0,
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          },
-          "noValue": "No qualifying comparison"
-        },
-        "overrides": []
-      },
-      "options": {
-        "orientation": "horizontal",
-        "xField": "Offer",
-        "showValue": "always",
-        "groupWidth": 0.7,
-        "barWidth": 0.8,
-        "stacking": "none",
-        "legend": {
-          "showLegend": false
-        },
-        "tooltip": {
-          "mode": "single"
-        },
-        "xTickLabelMaxLength": 120
-      }
-    },
-    {
-      "id": 3,
-      "type": "table",
-      "title": "Recorded offers and normalized terms · all observation dates",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "gym-intel-memberships"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 28,
+        "y": 4,
         "w": 24,
         "h": 13
       },
@@ -235,52 +58,174 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT brand_name AS \"Gym\", branch_name AS \"Branch\", plan_name AS \"Original plan name\",\n  CASE access_scope WHEN 'single_branch' THEN 'Single branch'\n    WHEN 'multiple_named_branches' THEN 'Specified branches'\n    WHEN 'all_uae_branches' THEN 'All operator UAE branches'\n    ELSE 'Unknown' END AS \"Access\",\n  advertised_price_aed::double precision AS \"Advertised price AED\",\n  CASE WHEN billing_period_months IS NULL THEN 'Unknown'\n    WHEN billing_period_months = 1 THEN '1 month'\n    ELSE billing_period_months::text || ' months' END AS \"Payment covers\",\n  CASE WHEN minimum_commitment_months IS NULL THEN 'Unknown'\n    WHEN minimum_commitment_months = 0 THEN 'No minimum commitment'\n    WHEN minimum_commitment_months = 1 THEN '1 month'\n    ELSE minimum_commitment_months::text || ' months' END AS \"Minimum commitment\",\n  CASE payment_structure WHEN 'prepaid_term' THEN 'Prepaid term'\n    WHEN 'recurring' THEN 'Recurring payments' ELSE 'Unknown' END AS \"Payment structure\",\n  CASE renewal_policy WHEN 'automatic' THEN 'Automatic renewal'\n    WHEN 'non_automatic' THEN 'No automatic renewal' ELSE 'Unknown' END AS \"Renewal\",\n  CASE price_vat_status WHEN 'included' THEN 'VAT included'\n    WHEN 'excluded' THEN 'VAT excluded' ELSE 'Unknown' END AS \"Membership price VAT\",\n  joining_fee_aed::double precision AS \"Joining fee AED\",\n  admin_fee_aed::double precision AS \"Admin fee AED\",\n  COALESCE(INITCAP(offer_type), 'Unknown') AS \"Offer type\",\n  observed_on::text AS \"Observed\", source_published_on::text AS \"Published\",\n  source_url AS \"Source\", notes AS \"Conditions / unknowns\"\nFROM memberships\nORDER BY observed_on DESC, brand_name, branch_name, plan_name, id"
+          "rawSql": "WITH dated AS (\n  SELECT m.*,\n    MAX(observed_on) OVER (\n      PARTITION BY brand_name, branch_name, plan_name\n    ) AS latest_offer_date\n  FROM memberships AS m\n), latest AS (\n  SELECT brand_name, branch_name, plan_name, observed_on,\n    MIN(access_scope) AS access_scope,\n    MIN(billing_period_months) AS billing_period_months,\n    MIN(advertised_price_aed) AS advertised_price_aed,\n    MIN(minimum_commitment_months) AS minimum_commitment_months,\n    MIN(joining_fee_aed) AS joining_fee_aed,\n    MIN(admin_fee_aed) AS admin_fee_aed,\n    MIN(payment_structure) AS payment_structure,\n    MIN(renewal_policy) AS renewal_policy,\n    MIN(price_vat_status) AS price_vat_status,\n    MIN(source_url) AS source_url,\n    STRING_AGG(DISTINCT source_url, ' | ') AS all_sources,\n    STRING_AGG(DISTINCT notes, E'\\n\\n') AS notes\n  FROM dated\n  WHERE observed_on = latest_offer_date\n  GROUP BY brand_name, branch_name, plan_name, observed_on\n  HAVING COUNT(DISTINCT ROW(\n    access_scope, billing_period_months, advertised_price_aed,\n    minimum_commitment_months, joining_fee_aed, admin_fee_aed,\n    payment_structure, renewal_policy, price_vat_status\n  )) = 1\n), labelled AS (\n  SELECT *,\n    COUNT(*) OVER (PARTITION BY brand_name) AS offers_for_brand\n  FROM latest\n  WHERE access_scope = 'single_branch'\n    AND billing_period_months = 1\n    AND advertised_price_aed IS NOT NULL\n)\nSELECT brand_name ||\n    CASE WHEN offers_for_brand > 1\n      THEN ' · ' || branch_name || ' · ' || plan_name ELSE '' END AS \"Gym\",\n  advertised_price_aed::double precision AS \"Advertised charge\",\n  observed_on::text AS \"Observed\",\n  source_url AS \"Source\",\n  'Minimum commitment: ' ||\n    CASE WHEN minimum_commitment_months IS NULL THEN 'Unknown'\n      WHEN minimum_commitment_months = 0 THEN 'No minimum'\n      WHEN minimum_commitment_months = 1 THEN '1 month'\n      ELSE minimum_commitment_months::text || ' months' END ||\n    '; Joining: ' || COALESCE('AED ' || joining_fee_aed::text, 'Unknown') ||\n    '; Admin: ' || COALESCE('AED ' || admin_fee_aed::text, 'Unknown') ||\n    '; VAT: ' || COALESCE(price_vat_status, 'Unknown') ||\n    '; Payment: ' || CASE payment_structure\n      WHEN 'recurring' THEN 'Recurring'\n      WHEN 'prepaid_term' THEN 'Prepaid term' ELSE 'Unknown' END ||\n    '; Renewal: ' || CASE renewal_policy\n      WHEN 'automatic' THEN 'Automatic'\n      WHEN 'non_automatic' THEN 'Not automatic' ELSE 'Unknown' END AS \"Terms\",\n  branch_name AS \"Branch\",\n  plan_name AS \"Original plan\",\n  all_sources AS \"Supporting sources\",\n  notes AS \"Source notes\"\nFROM labelled\nORDER BY brand_name, branch_name, plan_name"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "gym-intel-memberships"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT chr(8203)::text AS \"Category\""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "axisLabel": "AED per month"
+          },
+          "decimals": 2,
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "No eligible recorded monthly price",
+          "links": [
+            {
+              "title": "Official source · checked ${__field.labels.Observed}",
+              "url": "${__field.labels.Source}",
+              "targetBlank": true
+            },
+            {
+              "title": "${__field.labels.Terms}",
+              "url": "${__field.labels.Source}",
+              "targetBlank": true
+            }
+          ],
+          "displayName": "${__field.name}"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Category"
+            },
+            "properties": [
+              {
+                "id": "noValue",
+                "value": " "
+              },
+              {
+                "id": "links",
+                "value": []
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "vertical",
+        "xField": "Category",
+        "showValue": "always",
+        "groupWidth": 0.65,
+        "barWidth": 0.65,
+        "stacking": "none",
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "right",
+          "width": 280,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "single",
+          "maxWidth": 700
+        },
+        "xTickLabelMaxLength": 55,
+        "xTickLabelRotation": 0
+      },
+      "transformations": [
+        {
+          "id": "rowsToFields",
+          "filter": {
+            "id": "byRefId",
+            "options": "A"
+          },
+          "options": {
+            "mappings": []
+          }
+        },
+        {
+          "id": "concatenate",
+          "options": {
+            "frameNameMode": "drop"
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Offer conditions — same offers as the graph",
+      "description": "Five visible columns for the exact offers selected by the graph, in the same alphabetical order. Joining and admin fees remain separate; Unknown is not zero. Membership VAT does not establish fee tax treatment. Click a gym name for the official source and observation date; hidden metadata, original plan and full notes remain in Inspect data. These are differing offers, not equivalent memberships or payable totals.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "gym-intel-memberships"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 24,
+        "h": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "gym-intel-memberships"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH dated AS (\n  SELECT m.*,\n    MAX(observed_on) OVER (\n      PARTITION BY brand_name, branch_name, plan_name\n    ) AS latest_offer_date\n  FROM memberships AS m\n), latest AS (\n  SELECT brand_name, branch_name, plan_name, observed_on,\n    MIN(access_scope) AS access_scope,\n    MIN(billing_period_months) AS billing_period_months,\n    MIN(advertised_price_aed) AS advertised_price_aed,\n    MIN(minimum_commitment_months) AS minimum_commitment_months,\n    MIN(joining_fee_aed) AS joining_fee_aed,\n    MIN(admin_fee_aed) AS admin_fee_aed,\n    MIN(payment_structure) AS payment_structure,\n    MIN(renewal_policy) AS renewal_policy,\n    MIN(price_vat_status) AS price_vat_status,\n    MIN(source_url) AS source_url,\n    STRING_AGG(DISTINCT source_url, ' | ') AS all_sources,\n    STRING_AGG(DISTINCT notes, E'\\n\\n') AS notes\n  FROM dated\n  WHERE observed_on = latest_offer_date\n  GROUP BY brand_name, branch_name, plan_name, observed_on\n  HAVING COUNT(DISTINCT ROW(\n    access_scope, billing_period_months, advertised_price_aed,\n    minimum_commitment_months, joining_fee_aed, admin_fee_aed,\n    payment_structure, renewal_policy, price_vat_status\n  )) = 1\n), labelled AS (\n  SELECT *,\n    COUNT(*) OVER (PARTITION BY brand_name) AS offers_for_brand\n  FROM latest\n  WHERE access_scope = 'single_branch'\n    AND billing_period_months = 1\n    AND advertised_price_aed IS NOT NULL\n)\nSELECT brand_name ||\n    CASE WHEN offers_for_brand > 1\n      THEN ' · ' || branch_name || ' · ' || plan_name ELSE '' END AS \"Gym\",\n  branch_name AS \"Branch\",\n  CASE WHEN minimum_commitment_months IS NULL THEN 'Unknown'\n    WHEN minimum_commitment_months = 0 THEN 'No minimum'\n    WHEN minimum_commitment_months = 1 THEN '1 month'\n    ELSE minimum_commitment_months::text || ' months' END AS \"Minimum commitment\",\n  'Joining: ' || COALESCE('AED ' || joining_fee_aed::text, 'Unknown') ||\n    '; Admin: ' || COALESCE('AED ' || admin_fee_aed::text, 'Unknown') AS \"Joining / admin fees\",\n  'Payment: ' || CASE payment_structure\n    WHEN 'recurring' THEN 'Recurring'\n    WHEN 'prepaid_term' THEN 'Prepaid term' ELSE 'Unknown' END ||\n    '; Renewal: ' || CASE renewal_policy\n      WHEN 'automatic' THEN 'Automatic'\n      WHEN 'non_automatic' THEN 'Not automatic' ELSE 'Unknown' END ||\n    '; Membership VAT: ' || CASE price_vat_status\n      WHEN 'included' THEN 'Included'\n      WHEN 'excluded' THEN 'Excluded' ELSE 'Unknown' END AS \"Payment / renewal / VAT\",\n  observed_on::text AS \"Observed\",\n  source_url AS \"Source\",\n  plan_name AS \"Original plan\",\n  all_sources AS \"Supporting sources\",\n  notes AS \"Source notes\"\nFROM labelled\nORDER BY brand_name, branch_name, plan_name"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "noValue": "Unknown",
           "custom": {
-            "align": "auto",
+            "align": "left",
+            "minWidth": 95,
             "cellOptions": {
-              "type": "auto"
+              "type": "auto",
+              "wrapText": true
             },
-            "filterable": true
+            "filterable": false
           }
         },
         "overrides": [
           {
             "matcher": {
               "id": "byName",
-              "options": "Source"
+              "options": "Gym"
             },
             "properties": [
               {
                 "id": "links",
                 "value": [
                   {
-                    "title": "Official source",
-                    "url": "${__value.raw}",
+                    "title": "Official source · checked ${__data.fields[\"Observed\"]}",
+                    "url": "${__data.fields[\"Source\"]}",
                     "targetBlank": true
                   }
                 ]
-              },
-              {
-                "id": "custom.width",
-                "value": 240
               }
             ]
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "Conditions / unknowns"
+              "id": "byRegexp",
+              "options": "^(Observed|Source|Original plan|Supporting sources|Source notes)$"
             },
             "properties": [
               {
-                "id": "custom.width",
-                "value": 850
+                "id": "custom.hidden",
+                "value": true
               }
             ]
           }
@@ -288,141 +233,15 @@
       },
       "options": {
         "showHeader": true,
-        "cellHeight": "md",
+        "cellHeight": "sm",
         "footer": {
           "show": false
         }
-      },
-      "description": "All recorded observations, newest first. Unknown prices remain visible; amounts cover the displayed billing period, not necessarily a month. Original plan names are traceability, not comparison categories. This history is not filtered by the chart selectors. Membership price VAT does not establish fee tax treatment. Joining/admin amounts are separate one-time charges as quoted; unknown is not zero. No total-cost calculation is implemented."
+      }
     }
   ],
   "templating": {
-    "list": [
-      {
-        "name": "access_scope",
-        "label": "Comparison access",
-        "type": "custom",
-        "query": "Single branch : single_branch",
-        "current": {
-          "text": "Single branch",
-          "value": "single_branch"
-        },
-        "options": [
-          {
-            "text": "Single branch",
-            "value": "single_branch",
-            "selected": true
-          }
-        ],
-        "includeAll": false,
-        "multi": false,
-        "hide": 0,
-        "skipUrlSync": false,
-        "allowCustomValue": false
-      },
-      {
-        "name": "commitment",
-        "label": "Comparison minimum commitment",
-        "type": "query",
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "gym-intel-memberships"
-        },
-        "definition": "Known commitment values for the selected offers; no minimum is always an available choice.",
-        "query": "WITH expected_offers (brand_name, branch_name, plan_name) AS (\n  VALUES\n    ('GymNation', 'Downtown Dubai', 'Core'),\n    ('PureGym', 'Dubai Al Barsha', 'CORE'),\n    ('The Warehouse Gym', 'IBN Battuta Mall', 'Light Monthly')\n)\nSELECT CASE WHEN months = 0 THEN 'No minimum commitment'\n  WHEN months = 1 THEN '1 month' ELSE months::text || ' months' END AS __text,\n  months::text AS __value\nFROM (\n  SELECT 0 AS months\n  UNION\n  SELECT DISTINCT minimum_commitment_months\n  FROM memberships JOIN expected_offers USING (brand_name, branch_name, plan_name)\n  WHERE minimum_commitment_months IS NOT NULL\n) AS commitments\nORDER BY months",
-        "current": {
-          "text": "No minimum commitment",
-          "value": "0"
-        },
-        "options": [],
-        "refresh": 1,
-        "includeAll": false,
-        "multi": false,
-        "hide": 0,
-        "skipUrlSync": false,
-        "allowCustomValue": false
-      },
-      {
-        "name": "payment_structure",
-        "label": "Comparison payment",
-        "type": "custom",
-        "query": "Recurring payments : recurring,Prepaid term : prepaid_term",
-        "current": {
-          "text": "Recurring payments",
-          "value": "recurring"
-        },
-        "options": [
-          {
-            "text": "Recurring payments",
-            "value": "recurring",
-            "selected": true
-          },
-          {
-            "text": "Prepaid term",
-            "value": "prepaid_term",
-            "selected": false
-          }
-        ],
-        "includeAll": false,
-        "multi": false,
-        "hide": 0,
-        "skipUrlSync": false,
-        "allowCustomValue": false
-      },
-      {
-        "name": "renewal_policy",
-        "label": "Comparison renewal",
-        "type": "custom",
-        "query": "Automatic renewal : automatic,No automatic renewal : non_automatic",
-        "current": {
-          "text": "Automatic renewal",
-          "value": "automatic"
-        },
-        "options": [
-          {
-            "text": "Automatic renewal",
-            "value": "automatic",
-            "selected": true
-          },
-          {
-            "text": "No automatic renewal",
-            "value": "non_automatic",
-            "selected": false
-          }
-        ],
-        "includeAll": false,
-        "multi": false,
-        "hide": 0,
-        "skipUrlSync": false,
-        "allowCustomValue": false
-      },
-      {
-        "name": "price_vat_status",
-        "label": "Comparison price VAT",
-        "type": "custom",
-        "query": "VAT included : included,VAT excluded : excluded",
-        "current": {
-          "text": "VAT included",
-          "value": "included"
-        },
-        "options": [
-          {
-            "text": "VAT included",
-            "value": "included",
-            "selected": true
-          },
-          {
-            "text": "VAT excluded",
-            "value": "excluded",
-            "selected": false
-          }
-        ],
-        "includeAll": false,
-        "multi": false,
-        "hide": 0,
-        "skipUrlSync": false,
-        "allowCustomValue": false
-      }
-    ]
-  }
+    "list": []
+  },
+  "description": "One vertical graph and a compact conditions table for the same latest recorded monthly offers. Dates and terms differ; no filters, all-in-cost ranking or equivalence claim."
 }
