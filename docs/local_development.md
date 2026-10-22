@@ -105,7 +105,7 @@ docker compose exec -T postgres sh /opt/gym-intel/configure-roles.sh
 sh scripts/migrate.sh
 docker compose up -d --wait
 docker compose ps
-docker compose exec --no-TTY app mix ecto.migrations
+docker compose exec -T postgres sh /opt/gym-intel/role-psql.sh gym_intel_app -c 'SELECT version FROM public.schema_migrations ORDER BY version;'
 curl http://127.0.0.1:3000/api/health
 ```
 
@@ -123,10 +123,27 @@ app. Add explicit grants to `priv/database_roles.sql` when adding new tables.
 Expected evidence:
 
 - `docker compose ps` lists exactly three running services.
-- Ecto lists `create_memberships`, `add_oban_jobs`, and `create_membership_imports` as `up`.
+- The read-only migration query lists versions `20260912000100`, `20260912000200`, `20260912000300`, `20261022000100`, and `20261022000200`; the corresponding files are the three original migrations, payment/renewal and VAT/admin extensions.
 - Grafana's health endpoint reports that its database is OK.
 
 Open Grafana at <http://127.0.0.1:3000>.
+
+Use the read-only version query above for runtime verification. `mix ecto.migrations`
+also attempts migration-table DDL and is denied by the restricted runtime account;
+do not grant schema CREATE permission just to make that listing command succeed.
+Migration execution belongs in `scripts/migrate.sh` with the migrator credential.
+
+If a container reports that a mounted helper is missing after a Git checkout
+or pull, refresh the file mounts by recreating the containers:
+
+```bash
+docker compose up -d --force-recreate --wait
+```
+
+This preserves named volumes. During the dashboard-correctness work, configured
+helper mounts became unavailable after checkout; recreation restored them and
+the authenticated database health check. Application-code or migration changes
+still require the build and migration steps above.
 
 ## Connect Grafana to memberships
 
@@ -184,21 +201,65 @@ Git rather than saving dashboard changes through the UI. Grafana polls dashboard
 files every 30 seconds. This does not fetch new gym facts or automatically import
 CSV changes. Use the dashboard Refresh button after an import.
 
-Expected after importing the initial CSV: three bars (GymNation 209, PureGym 199,
-Warehouse 363 AED/month) and three terms/source rows dated 2026-09-12. Blank
-commitments and joining fees display Unknown, not zero. Prices come from SQL,
-not hardcoded panel values.
+Expected after importing the initial CSV: three overview bars (GymNation 209,
+PureGym 199, Warehouse 363 AED/month) and three evidence-history rows dated
+2026-09-12. Original plan names remain unchanged; readable access, payment-period
+and commitment labels interpret the existing fields. Payment structure and
+renewal are separate evidence columns. Membership-price VAT and one-time admin
+fees have their own columns, separate from joining fees. The additive migrations leave these
+NULL on historical observations; it does not infer facts or backfill gym terms.
+Blank commitments, classifications and joining fees display Unknown, not zero.
+Prices come from SQL, not hardcoded
+panel values. There is no automatic marketing-name-to-tier classifier.
 
-Both panels select the latest observation date across memberships, then include
-only single-branch offers with monthly billing and a known advertised price.
-They ignore the Grafana time picker, which is hidden. Different dates are never
-mixed; an incomplete latest collection can reduce the number of displayed gyms.
-No eligible observations produces No data. Other billing periods, access scopes,
-and unknown prices are deliberately excluded from this first view.
+The chart selects the newest date with known monthly single-branch prices for
+all three offers explicitly listed in `docs/data_contract.md`. It preserves the
+previous complete set when a newer collection is partial or incompatible. A
+conflicting price for a selected offer prevents that date from qualifying.
+The query returns `Observed` alongside its numeric values. No complete date
+produces No data; dates are never mixed within the chart.
+
+The filtered chart uses the same overview date, fixes access to Single branch
+for the current selected set, and offers minimum-commitment, payment-structure
+renewal-policy and membership-price VAT selectors. At least two distinct gym brands must match access,
+monthly billing, known commitment, known payment structure, known renewal and known price VAT basis;
+unknown or conflicting terms exclude an offer. With the existing records, both No
+minimum commitment and 3 months produce **Not enough comparable offers** and no
+filtered bars. That result is intentional, not a connection failure. Filters
+do not affect the overview or evidence history. User values are interpolated
+using Grafana's SQL-string quoting, not inserted as raw SQL.
+
+Current CSV headers have 17 columns, appending `payment_structure`,
+`renewal_policy`, `price_vat_status` and `admin_fee_aed` after `notes`.
+Historical 13- and 15-column files and queued snapshots still parse with their
+missing fields unknown; the checked-in original observations
+are deliberately unchanged. Rebuild the app and run `sh scripts/migrate.sh`
+before loading the updated provisioned dashboard SQL. This nullable-column
+migration preserves existing rows and source values. A newly sourced prepaid
+term must not be grouped with recurring payments merely because both cover a
+month; neither classification determines its automatic-renewal policy.
+
+The VAT selector contains only VAT included / VAT excluded. Unknown or conflicting
+membership-price VAT does not qualify. The filtered chart title states its VAT
+basis; an excluded-VAT chart shows pre-VAT source charges, not amounts payable.
+No tax rate is assumed or applied. Historical overview amounts are not converted
+and may have unknown or differing tax treatment, which is explicitly warned.
+The VAT flag does not establish how separate fees are taxed. No joining fee does
+not imply no admin fee; no total-cost or first-payment calculation is implemented.
+Other mandatory charges and their timing remain outside this two-field extension.
+
+The evidence table includes all recorded observations and dates, including
+unknown prices and annual offers. Its numeric price is the native advertised
+amount, with Payment covers identifying the period; an annual price must not
+be mislabelled monthly. The hidden time picker does not filter these panels.
 
 This is an advertised-charge overview, not an all-in-cost or value ranking.
-Terms, tax treatment, offer type and facilities may differ. Read the warning and
-source notes; do not infer that alphabetically ordered bars are equivalent offers.
+Even the filtered charge chart matches only the named dimensions: fees, tax
+treatment, offer type and facilities may differ. Read the warning and source
+notes; do not infer that alphabetically ordered bars are equivalent memberships.
+The source audit in `docs/data_contract.md` is not imported data. It identifies
+unresolved Warehouse scope and mandatory-fee modelling gaps; no current purchase
+quote or all-in-cost calculation is claimed.
 
 ## Queue a membership CSV
 
@@ -262,7 +323,12 @@ Database tests refuse any other database name. Synthetic rows and test jobs use
 sandbox transactions and are rolled back after each test. The test database and
 its migrated tables remain for later runs. Tests cover validation, CSV parsing,
 atomic saves, duplicate handling, enqueueing, and worker execution through Oban's
-test helper. A live queue smoke check is separate from those tests. No CI is set up.
+test helper. Dashboard regression tests execute actual panel and variable SQL
+loaded from the read-only mounted dashboard JSON. They mirror Grafana's
+`sqlstring` quoting for access, commitment, payment, renewal and VAT selections and check that unknown or
+conflicting conditions cannot qualify. Their synthetic observations are confined
+to sandbox transactions in the test database. A live queue smoke check is
+separate from those tests. No CI is set up.
 
 ## Stop
 

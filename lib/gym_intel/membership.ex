@@ -2,7 +2,7 @@ defmodule GymIntel.Membership do
   use Ecto.Schema
   import Ecto.Changeset
 
-  @fields ~w(brand_name branch_name plan_name access_scope offer_type advertised_price_aed billing_period_months minimum_commitment_months joining_fee_aed source_url source_published_on observed_on notes)a
+  @fields ~w(brand_name branch_name plan_name access_scope offer_type advertised_price_aed billing_period_months minimum_commitment_months joining_fee_aed source_url source_published_on observed_on notes payment_structure renewal_policy price_vat_status admin_fee_aed)a
 
   schema "memberships" do
     field(:brand_name, :string)
@@ -18,6 +18,10 @@ defmodule GymIntel.Membership do
     field(:source_published_on, :date)
     field(:observed_on, :date)
     field(:notes, :string)
+    field(:payment_structure, :string)
+    field(:renewal_policy, :string)
+    field(:price_vat_status, :string)
+    field(:admin_fee_aed, :decimal)
 
     timestamps(type: :utc_datetime_usec)
   end
@@ -34,10 +38,14 @@ defmodule GymIntel.Membership do
       "all_uae_branches"
     ])
     |> validate_inclusion(:offer_type, ["standard", "promotional"])
+    |> validate_inclusion(:payment_structure, ["prepaid_term", "recurring"])
+    |> validate_inclusion(:renewal_policy, ["automatic", "non_automatic"])
+    |> validate_inclusion(:price_vat_status, ["included", "excluded"])
     |> validate_number(:advertised_price_aed, greater_than_or_equal_to: 0)
     |> validate_number(:billing_period_months, greater_than: 0)
     |> validate_number(:minimum_commitment_months, greater_than_or_equal_to: 0)
     |> validate_number(:joining_fee_aed, greater_than_or_equal_to: 0)
+    |> validate_number(:admin_fee_aed, greater_than_or_equal_to: 0)
     |> validate_source_url()
     |> validate_related_fields()
   end
