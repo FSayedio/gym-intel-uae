@@ -162,4 +162,82 @@ defmodule GymIntel.MembershipCSVTest do
   test "returns a file error for a missing input" do
     assert {:error, {:file, :enoent}} = MembershipCSV.read("data/nonexistent-test-input.csv")
   end
+
+  test "accepts one leading UTF-8 BOM without altering field contents" do
+    for ending <- ["\n", "\r\n"] do
+      contents = String.replace(header() <> row("ملاحظات\nSecond line") <> "\n", "\n", ending)
+      assert {:ok, [record]} = MembershipCSV.parse(<<0xEF, 0xBB, 0xBF>> <> contents)
+      assert String.starts_with?(record.notes, "ملاحظات")
+    end
+
+    assert {:error, :missing_header} = MembershipCSV.parse(<<0xEF, 0xBB, 0xBF>>)
+    assert {:error, :header_mismatch} = MembershipCSV.parse(<<0xEF, 0xBB, 0xBF>> <> "wrong\n")
+  end
+
+  test "ignores only completely empty trailing records, not gaps or incomplete rows" do
+    for ending <- ["\n", "\r\n"] do
+      contents = String.replace(header() <> row() <> "\n\n\n", "\n", ending)
+      assert {:ok, [_]} = MembershipCSV.parse(contents)
+    end
+
+    assert {:ok, []} = MembershipCSV.parse(header() <> "\n\n")
+
+    assert {:error, {:rows, [%{record: 3, reason: :column_count}]}} =
+             MembershipCSV.parse(header() <> row() <> "\n\n" <> row())
+
+    for trailing <- ["   ", ",", String.duplicate(",", 16)] do
+      assert {:error, {:rows, [_]}} = MembershipCSV.parse(header() <> row() <> "\n" <> trailing)
+    end
+  end
+
+  @tag :tmp_dir
+  test "bounded file reads and in-memory parsing share the exact byte boundary", %{tmp_dir: dir} do
+    limit = MembershipCSV.max_bytes()
+    contents = header() <> row(String.duplicate("x", limit - byte_size(header() <> row())))
+    assert byte_size(contents) == limit
+    path = Path.join(dir, "bounded.csv")
+    File.write!(path, contents)
+
+    assert :ok = MembershipCSV.check_contents(contents)
+    assert {:ok, ^contents} = MembershipCSV.read_contents(path)
+    assert {:ok, [_]} = MembershipCSV.read(path)
+    assert {:ok, [_]} = MembershipCSV.parse(contents)
+
+    File.write!(path, contents <> "x")
+    assert {:error, :csv_too_large} = MembershipCSV.read_contents(path)
+    assert {:error, :csv_too_large} = MembershipCSV.read(path)
+    assert {:error, :csv_too_large} = MembershipCSV.parse(contents <> "x")
+    assert {:error, :csv_too_large} = MembershipCSV.parse(<<0xEF, 0xBB, 0xBF>> <> contents)
+  end
+
+  @tag :tmp_dir
+  test "raw snapshot reads preserve BOM and line endings and report encoding errors", %{
+    tmp_dir: dir
+  } do
+    path = Path.join(dir, "snapshot.csv")
+    contents = <<0xEF, 0xBB, 0xBF>> <> String.replace(header() <> row() <> "\n\n", "\n", "\r\n")
+    File.write!(path, contents)
+    assert {:ok, ^contents} = MembershipCSV.read_contents(path)
+    File.write!(path, <<255>>)
+    assert {:error, :invalid_utf8} = MembershipCSV.read_contents(path)
+    File.write!(path, "")
+    assert {:ok, ""} = MembershipCSV.read_contents(path)
+    assert {:error, :missing_header} = MembershipCSV.read(path)
+    assert {:error, :invalid_arguments} = MembershipCSV.parse(nil)
+  end
+
+  test "new input rules produce row and field errors before persistence" do
+    for {contents, field} <- [
+          {String.replace(row(), ",100,1,", ",2e2,1,"), :advertised_price_aed},
+          {String.replace(row(), ",100,1,", ",100.001,1,"), :advertised_price_aed},
+          {String.replace(row(), "2026-09-12", "2099-01-01"), :observed_on},
+          {String.replace(row(), "example.com", "test-user:test-only@example.com"), :source_url},
+          {row("TEST" <> <<0>>), :notes}
+        ] do
+      assert {:error, {:rows, [%{record: 2, reason: :validation, errors: errors}]}} =
+               MembershipCSV.parse(header() <> contents)
+
+      assert Map.has_key?(errors, field)
+    end
+  end
 end

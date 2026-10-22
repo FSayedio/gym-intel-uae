@@ -7,23 +7,48 @@ defmodule GymIntel.MembershipCSV do
   @legacy_headers ~w(brand_name branch_name plan_name access_scope offer_type advertised_price_aed billing_period_months minimum_commitment_months joining_fee_aed source_url source_published_on observed_on notes)
   @payment_headers @legacy_headers ++ ~w(payment_structure renewal_policy)
   @headers @payment_headers ++ ~w(price_vat_status admin_fee_aed)
+  @max_bytes 1_000_000
 
   def headers, do: @headers
+  def max_bytes, do: @max_bytes
 
   def read(path) do
-    case File.read(path) do
-      {:ok, contents} -> parse(contents)
+    with {:ok, contents} <- read_contents(path), do: parse(contents)
+  end
+
+  @doc "Reads at most the byte limit plus one, preserving the snapshot's original bytes."
+  def read_contents(path) do
+    result =
+      File.open(path, [:read, :binary], fn file ->
+        case IO.binread(file, @max_bytes + 1) do
+          :eof -> {:ok, ""}
+          {:error, reason} -> {:error, {:file, reason}}
+          contents -> with :ok <- check_contents(contents), do: {:ok, contents}
+        end
+      end)
+
+    case result do
+      {:ok, read_result} -> read_result
       {:error, reason} -> {:error, {:file, reason}}
     end
   end
 
-  def parse(contents) do
-    if String.valid?(contents) do
-      parse_utf8(contents)
-    else
-      {:error, :invalid_utf8}
+  def check_contents(contents) when is_binary(contents) do
+    cond do
+      byte_size(contents) > @max_bytes -> {:error, :csv_too_large}
+      not String.valid?(contents) -> {:error, :invalid_utf8}
+      true -> :ok
     end
   end
+
+  def check_contents(_contents), do: {:error, :invalid_arguments}
+
+  def parse(contents) do
+    with :ok <- check_contents(contents), do: parse_utf8(strip_bom(contents))
+  end
+
+  defp strip_bom(<<0xEF, 0xBB, 0xBF, contents::binary>>), do: contents
+  defp strip_bom(contents), do: contents
 
   defp parse_utf8(contents) do
     case CSV.parse_string(contents, skip_headers: false) do
@@ -31,7 +56,11 @@ defmodule GymIntel.MembershipCSV do
         {:error, :missing_header}
 
       [headers | rows] when headers in [@headers, @payment_headers, @legacy_headers] ->
-        validate_rows(rows, headers)
+        rows
+        |> Enum.reverse()
+        |> Enum.drop_while(&(&1 in [[], [""]]))
+        |> Enum.reverse()
+        |> validate_rows(headers)
 
       [_header | _rows] ->
         {:error, :header_mismatch}

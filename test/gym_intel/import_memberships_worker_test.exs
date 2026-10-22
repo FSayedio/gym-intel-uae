@@ -12,6 +12,29 @@ defmodule GymIntel.ImportMembershipsWorkerTest do
 
   test "invalid CSV is cancelled rather than retried" do
     assert {:cancel, :header_mismatch} = perform_job(ImportMemberships, %{"csv" => "wrong\n"})
+    # Oban's JSON round-trip cannot encode invalid UTF-8; exercise the defensive
+    # worker boundary directly. File-based rejection is tested before enqueue.
+    assert {:cancel, :invalid_utf8} =
+             ImportMemberships.perform(%Oban.Job{args: %{"csv" => <<255>>}})
+  end
+
+  @tag :tmp_dir
+  test "invalid-row and missing-file enqueue errors return without database access", %{
+    tmp_dir: dir
+  } do
+    path = Path.join(dir, "rejected.csv")
+
+    contents =
+      Enum.join(MembershipCSV.headers(), ",") <>
+        "\nTEST ONLY,,TEST,all_uae_branches,,2e2,1,,,https://example.com,,2026-09-12,,,,,\n"
+
+    File.write!(path, contents)
+
+    assert {:error, {:rows, [%{errors: %{advertised_price_aed: _}}]}} =
+             ImportMemberships.enqueue_file(path)
+
+    assert {:error, {:file, :enoent}} =
+             ImportMemberships.enqueue_file(Path.join(dir, "missing.csv"))
   end
 
   test "header-only CSV completes as an empty import" do

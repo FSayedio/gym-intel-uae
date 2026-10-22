@@ -53,6 +53,55 @@ defmodule GymIntel.MembershipImporterDatabaseTest do
     assert counts() == before
   end
 
+  test "hardening failures leave both rows and fingerprint unchanged" do
+    before = counts()
+    valid = csv(["TEST VALID"])
+    invalid = csv(["TEST INVALID"])
+    [_header, invalid_row] = String.split(invalid, "\n", trim: true)
+
+    for bad <- [
+          String.replace(invalid_row, ",100,1,", ",2e2,1,"),
+          String.replace(invalid_row, ",100,1,", ",100.001,1,"),
+          String.replace(invalid_row, ",100,1,", ",100,2147483648,"),
+          String.replace(invalid_row, "2026-09-12", "2099-01-01"),
+          String.replace(invalid_row, ",,2026-09-12", ",2026-09-13,2026-09-12"),
+          String.replace(invalid_row, "TEST ONLY", "TEST" <> <<0>>),
+          String.replace(invalid_row, "example.com", "test-user:test-only@example.com")
+        ] do
+      assert {:error, {:rows, [%{record: 3}]}} =
+               MembershipImporter.import_csv(valid <> bad <> "\n")
+
+      assert counts() == before
+    end
+
+    assert {:error, :csv_too_large} =
+             MembershipImporter.import_csv(String.duplicate("x", MembershipCSV.max_bytes() + 1))
+
+    assert counts() == before
+  end
+
+  test "export-only changes preserve raw fingerprints and skip matching observations" do
+    contents = csv(["TEST EXPORT"])
+    before = counts()
+    exported = <<0xEF, 0xBB, 0xBF>> <> String.replace(contents <> "\n\n", "\n", "\r\n")
+
+    assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
+             MembershipImporter.import_csv(contents)
+
+    assert {:ok, {:imported, %{inserted: 0, skipped: 1}}} =
+             MembershipImporter.import_csv(exported)
+
+    assert {:ok, :already_imported} = MembershipImporter.import_csv(exported)
+    assert counts() == {elem(before, 0) + 1, elem(before, 1) + 2}
+
+    fingerprint = :crypto.hash(:sha256, exported) |> Base.encode16(case: :lower)
+
+    assert %{rows: [[1]]} =
+             Repo.query!("SELECT row_count FROM membership_imports WHERE content_sha256 = $1", [
+               fingerprint
+             ])
+  end
+
   test "database failure rolls back earlier rows and fingerprint, allowing a retry" do
     # Test-only constraint; the sandbox also rolls back this schema change.
     Repo.query!("""
