@@ -6,19 +6,119 @@ The MVP foundation runs exactly three Docker services:
 - `postgres`: the local database for membership data and Oban jobs.
 - `grafana`: the local dashboard service.
 
-All three images support the Mac's ARM64 architecture. PostgreSQL and Grafana bind only to `127.0.0.1`, so they are not exposed to the local network. Authentication is deliberately disabled for this local-only foundation and must be replaced before any non-local deployment.
+All three images support the Mac's ARM64 architecture. PostgreSQL and Grafana bind only to `127.0.0.1`, so they are not exposed to the local network. Grafana permits anonymous Viewer access and requires an administrator login for administration. PostgreSQL requires SCRAM passwords for socket and network connections. The running app uses a limited account; migrations run separately with their own credentials.
+
+## Local secrets and Grafana administrator login
+
+Before starting the stack, generate a local password. These commands preserve
+an existing secret and do not print its contents:
+
+```bash
+umask 077
+mkdir -p .secrets
+chmod 700 .secrets
+for secret_name in grafana_admin_password postgres_password grafana_database_password postgres_app_password postgres_migrator_password; do
+  if [ ! -e ".secrets/$secret_name" ]; then
+    openssl rand -hex -out ".secrets/$secret_name" 32
+  fi
+  test -s ".secrets/$secret_name" || exit 1
+  chmod 644 ".secrets/$secret_name"
+done
+```
+
+The directory is accessible only to your host user. The file is readable by
+Grafana's container user through its secret mount. `.secrets/` is excluded from
+Git and the application image build. Compose file secrets are local files,
+not encrypted storage or a secret-management service.
+
+Grafana reads `/run/secrets/grafana_admin_password` when initializing a new
+database. Existing Grafana volumes retain the previous administrator password.
+After starting Grafana, apply the secret to the existing account with:
+
+```bash
+docker compose exec -T grafana sh -c 'grafana cli --homepath /usr/share/grafana --config /etc/grafana/grafana.ini --configOverrides cfg:default.paths.data=/var/lib/grafana admin reset-admin-password --password-from-stdin < /run/secrets/grafana_admin_password'
+```
+
+Expected: `Admin password changed successfully`. Sign in at
+<http://127.0.0.1:3000/login> as `admin`, using the password from your local
+secret file. Inspect that file privately; never paste its contents into logs,
+issues, or PRs. If you change the password through Grafana, update the local
+secret to match before applying it again.
+
+## PostgreSQL passwords
+
+Each account has a distinct secret file, excluded from Git:
+
+| Account | Secret file under `.secrets/` | Purpose |
+| --- | --- | --- |
+| `gym_intel` | `postgres_password` | Bootstrap owner and maintenance; PostgreSQL container only |
+| `gym_intel_migrator` | `postgres_migrator_password` | Schema ownership and explicit migration tasks |
+| `gym_intel_app` | `postgres_app_password` | Running app, imports, and Oban |
+| `gym_intel_grafana` | `grafana_database_password` | SELECT on memberships |
+
+Elixir reads `DATABASE_PASSWORD_FILE` at startup. The running app receives only
+its runtime secret. `scripts/migrate.sh` mounts the migrator secret into a
+short-lived container; it is absent from the running app. Grafana receives only
+the reader secret and its separate UI administrator secret.
+
+The mounted `postgres/pg_hba.conf` enforces SCRAM for both socket and network
+connections, including existing volumes. `POSTGRES_PASSWORD_FILE` sets the
+initial owner password only when the PostgreSQL data directory is empty.
+Changing that setting does not reset an existing account's password.
+
+For an existing trust-authenticated volume, set the account passwords before
+recreating the services with the new connection rules. Preserve existing data
+and take a database backup first. With the old trust rules still running:
+
+```bash
+for database_role in gym_intel gym_intel_grafana; do
+  case "$database_role" in
+    gym_intel) secret_file=.secrets/postgres_password ;;
+    gym_intel_grafana) secret_file=.secrets/grafana_database_password ;;
+  esac
+  { cat "$secret_file"; cat "$secret_file"; } |
+    docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 \
+      -U gym_intel -d gym_intel_dev -c "\\password $database_role" || exit 1
+done
+```
+
+Both legacy roles must already exist for that upgrade command. Then follow
+the startup sequence below to apply SCRAM rules and the new role separation.
+For a new volume, skip that legacy password-reset command and use the normal
+startup sequence. Once SCRAM is active, run
+maintenance queries with the helper that reads the owner password privately:
+
+```bash
+docker compose exec -T postgres sh /opt/gym-intel/psql.sh -c 'SELECT current_user;'
+```
+
+Expected: `gym_intel`. A direct `psql --no-password` connection with no supplied
+credentials must fail. Never set `PGPASSWORD` to a literal password in a command
+or print the environment. Keep the secret files in sync with any password changes.
 
 ## Start and verify
 
 ```bash
-docker compose up --build --wait
+docker compose build app
+docker compose up -d --wait postgres
+docker compose exec -T postgres sh /opt/gym-intel/configure-roles.sh
+sh scripts/migrate.sh
+docker compose up -d --wait
 docker compose ps
 docker compose exec --no-TTY app mix ecto.migrations
 curl http://127.0.0.1:3000/api/health
 ```
 
-The app applies pending Ecto migrations before it starts. Running the same
-migrations again is safe because Ecto records which versions are already up.
+Run this after generating all five secret files above. The role setup creates
+the accounts, transfers existing development tables to the migrator, and applies
+explicit runtime grants. It is safe to rerun with the same secret files. It is
+guarded to `gym_intel_dev`, so it does not transfer ownership of test databases.
+
+The running app never applies migrations on boot. `scripts/migrate.sh` runs
+pending migrations as `gym_intel_migrator` and reapplies grants afterwards.
+Ecto records versions already applied, so rerunning is safe. Use this same
+command after rebuilding an image that adds migrations, before restarting the
+app. Add explicit grants to `priv/database_roles.sql` when adding new tables.
 
 Expected evidence:
 
@@ -30,12 +130,12 @@ Open Grafana at <http://127.0.0.1:3000>.
 
 ## Connect Grafana to memberships
 
-After starting the stack and applying migrations, grant a dedicated local reader
-access to the memberships table and load the version-controlled data source:
+The startup sequence above configures the reader. To reapply its grants and
+password and reload the provisioned data source later:
 
 ```bash
-docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U gym_intel -d gym_intel_dev < priv/grafana_reader.sql
-docker compose up -d grafana
+docker compose exec -T postgres sh /opt/gym-intel/configure-roles.sh
+docker compose up -d --force-recreate grafana
 curl --fail http://127.0.0.1:3000/api/datasources/uid/gym-intel-memberships/health
 ```
 
@@ -45,10 +145,36 @@ connection. In Grafana, Connections > Data sources lists Gym Intel Memberships.
 
 The YAML uses `postgres:5432` because Grafana connects across the Compose network,
 not through the host port. The dedicated `gym_intel_grafana` login is granted only
-SELECT on memberships, not write access or access to Oban job contents. It uses
-the existing local trust authentication; this is not a production security setup.
-Anonymous Grafana Admin and PostgreSQL trust authentication remain limitations.
-After recreating the database volume, repeat reader setup after migrations.
+SELECT on memberships, not write access or access to Oban job contents. The setup
+script also sets the reader's SCRAM password from its mounted secret. Anonymous
+visitors cannot create data sources. Administrators can configure connections,
+but PostgreSQL requires a valid password for the requested database role.
+After recreating a database volume, follow the full startup sequence.
+
+## Verify role permissions
+
+```bash
+sh scripts/verify-permissions.sh
+```
+
+Expected: every forbidden action reports PASS, and the migrator can change a
+temporary probe table in a transaction that rolls back. The script connects as
+the actual role over SCRAM; it does not impersonate roles through a superuser
+session. It also verifies that owner/migrator secret files are absent from the
+running app.
+
+Runtime grants are deliberately explicit: SELECT/INSERT/UPDATE on memberships;
+SELECT/INSERT on import fingerprints; SELECT/INSERT/UPDATE/DELETE on Oban jobs
+and peers; SELECT on migration versions; and access to the required sequences.
+UPDATE on memberships currently permits the importer's SHARE ROW EXCLUSIVE
+table lock. Remove that extra grant when the planned database uniqueness change
+replaces the lock. Runtime cannot delete memberships, change tables, create
+roles, modify migration versions, or assume the owner/migrator identity.
+
+The bootstrap owner remains a superuser in the PostgreSQL container for local
+maintenance. Anyone controlling Docker or reading the private owner secret can
+administer the database; these roles are not a boundary against the machine's
+owner. Grafana's reader cannot write memberships or read import/Oban payloads.
 
 ## Membership dashboard
 
@@ -103,7 +229,7 @@ three total attempts; invalid input cancels. No periodic pruning is configured.
 Inspect job state (enqueueing is not proof of completion):
 
 ```bash
-docker compose exec -T postgres psql -U gym_intel -d gym_intel_dev -c \
+docker compose exec -T postgres sh /opt/gym-intel/psql.sh -c \
   "SELECT id, state, queue, attempt, completed_at, errors FROM oban_jobs ORDER BY id DESC LIMIT 5;"
 ```
 
@@ -126,12 +252,12 @@ docker compose run --rm --no-deps -e MIX_ENV=test \
 Run the full suite against the separate test database, never development data:
 
 ```bash
-docker compose run --rm --no-deps -e MIX_ENV=test \
-  -e DATABASE_NAME=gym_intel_test -e RUN_DB_TESTS=true \
-  -v "$PWD/test:/app/test" \
-  app sh -c 'mix ecto.create && mix ecto.migrate && mix test --no-start'
+sh scripts/test-database.sh
 ```
 
+That script mounts owner credentials only in a temporary test container because
+the existing suite creates its database and changes constraints. It hardcodes
+`gym_intel_test`; development ownership and runtime grants are not changed.
 Database tests refuse any other database name. Synthetic rows and test jobs use
 sandbox transactions and are rolled back after each test. The test database and
 its migrated tables remain for later runs. Tests cover validation, CSV parsing,

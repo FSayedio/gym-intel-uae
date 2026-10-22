@@ -1,3 +1,6 @@
 .git
 _build
 deps
+.env
+.env.*
+.secrets

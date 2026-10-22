@@ -16,4 +16,4 @@ COPY priv ./priv
 
 RUN mix compile --warnings-as-errors
 
-CMD ["sh", "-c", "mix ecto.migrate && exec mix run --no-halt"]
+CMD ["mix", "run", "--no-halt"]

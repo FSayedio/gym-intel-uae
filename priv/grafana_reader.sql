@@ -1,4 +1,4 @@
--- Run after migrations in gym_intel_dev. Local trust authentication only.
+-- Run through postgres/configure-roles.sh, before and after migrations.
 -- Re-running grants is safe; no membership data is changed.
 BEGIN;
 DO $$
@@ -11,7 +11,15 @@ BEGIN
   END IF;
 END
 $$;
+ALTER ROLE gym_intel_grafana NOSUPERUSER NOCREATEDB NOCREATEROLE
+  NOREPLICATION NOBYPASSRLS NOINHERIT;
 GRANT CONNECT ON DATABASE gym_intel_dev TO gym_intel_grafana;
 GRANT USAGE ON SCHEMA public TO gym_intel_grafana;
-GRANT SELECT ON public.memberships TO gym_intel_grafana;
+DO $$
+BEGIN
+  IF to_regclass('public.memberships') IS NOT NULL THEN
+    GRANT SELECT ON public.memberships TO gym_intel_grafana;
+  END IF;
+END
+$$;
 COMMIT;
