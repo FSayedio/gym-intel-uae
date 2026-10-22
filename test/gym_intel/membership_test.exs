@@ -17,7 +17,7 @@ defmodule GymIntel.MembershipTest do
     }
   end
 
-  defp changeset(attrs), do: Membership.changeset(%Membership{}, attrs)
+  defp changeset(attrs), do: Membership.changeset(%Membership{}, attrs, today: ~D[2026-10-22])
 
   defp assert_invalid(attrs, field) do
     result = changeset(attrs)
@@ -198,6 +198,149 @@ defmodule GymIntel.MembershipTest do
   test "source must have an HTTP or HTTPS scheme and host" do
     for bad <- ["not a URL", "/plan", "https:///", "ftp://example.com/plan"] do
       assert_invalid(Map.put(valid_attrs(), "source_url", bad), :source_url)
+    end
+  end
+
+  test "money accepts ordinary decimal text and rejects reinterpretation or rounding" do
+    for field <- ~w(advertised_price_aed joining_fee_aed admin_fee_aed) do
+      for value <- ["0", "199", "199.5", "199.50", "000199.50"] do
+        assert changeset(Map.put(valid_attrs(), field, value)).valid?
+      end
+
+      for value <- [
+            "2e2",
+            "2E2",
+            "199.999",
+            "199.500",
+            "+199",
+            "199.",
+            ".50",
+            "1,999",
+            " 199 ",
+            "NaN",
+            "Infinity"
+          ] do
+        assert_invalid(Map.put(valid_attrs(), field, value), String.to_existing_atom(field))
+      end
+    end
+  end
+
+  test "money representation is bounded before conversion, including typed decimals" do
+    largest = String.duplicate("9", 32)
+
+    for field <- ~w(advertised_price_aed joining_fee_aed admin_fee_aed) do
+      assert changeset(Map.put(valid_attrs(), field, largest <> ".99")).valid?
+
+      for value <- [
+            String.duplicate("9", 33),
+            String.duplicate("9", 10_000),
+            "1e999999999",
+            "1e-999999999"
+          ] do
+        assert_invalid(Map.put(valid_attrs(), field, value), String.to_existing_atom(field))
+      end
+    end
+
+    for value <- [100, Decimal.new("100.00"), Decimal.new(largest <> ".99")] do
+      attrs =
+        valid_attrs() |> Map.new(fn {key, value} -> {String.to_existing_atom(key), value} end)
+
+      assert changeset(Map.put(attrs, :advertised_price_aed, value)).valid?
+    end
+
+    for value <- [
+          Decimal.new("NaN"),
+          Decimal.new("Infinity"),
+          %Decimal{sign: 1, coef: 1, exp: 999_999_999},
+          %Decimal{sign: 1, coef: 1, exp: -999_999_999},
+          Decimal.new("199.999"),
+          199.999
+        ] do
+      assert_invalid(Map.put(valid_attrs(), "advertised_price_aed", value), :advertised_price_aed)
+    end
+  end
+
+  test "month values must fit PostgreSQL integer columns" do
+    for field <- ~w(billing_period_months minimum_commitment_months) do
+      for value <- ["2147483647", 2_147_483_647] do
+        assert changeset(Map.put(valid_attrs(), field, value)).valid?
+      end
+
+      for value <- ["2147483648", 2_147_483_648, String.duplicate("9", 10_000), "1e2", 1.5] do
+        assert_invalid(Map.put(valid_attrs(), field, value), String.to_existing_atom(field))
+      end
+    end
+  end
+
+  test "observation dates use a fixed reference date and reject the future" do
+    for value <- ["2026-10-21", "2026-10-22", ~D[2026-10-22]] do
+      assert changeset(Map.put(valid_attrs(), "observed_on", value)).valid?
+    end
+
+    for value <- ["2026-10-23", ~D[2099-01-01]] do
+      assert_invalid(Map.put(valid_attrs(), "observed_on", value), :observed_on)
+    end
+  end
+
+  test "publication can be unknown, earlier or same-day, but never after observation" do
+    for value <- [nil, "", "2026-09-11", "2026-09-12"] do
+      assert changeset(Map.put(valid_attrs(), "source_published_on", value)).valid?
+    end
+
+    assert_invalid(
+      Map.put(valid_attrs(), "source_published_on", "2026-09-13"),
+      :source_published_on
+    )
+  end
+
+  test "the UAE observation day changes at midnight UTC plus four" do
+    assert Membership.observation_today(~U[2026-10-22 19:59:59Z]) == ~D[2026-10-22]
+    assert Membership.observation_today(~U[2026-10-22 20:00:00Z]) == ~D[2026-10-23]
+    assert Membership.observation_today(~U[2026-12-31 20:00:00Z]) == ~D[2027-01-01]
+
+    # Same instant as 20:00 UTC, already expressed in Dubai's fixed UTC+4 zone.
+    dubai_midnight = %DateTime{
+      ~U[2026-10-22 20:00:00Z]
+      | day: 23,
+        hour: 0,
+        time_zone: "Asia/Dubai",
+        zone_abbr: "+04",
+        utc_offset: 14_400
+    }
+
+    assert Membership.observation_today(dubai_midnight) == ~D[2026-10-23]
+  end
+
+  test "NUL and invalid UTF-8 are field errors before persistence" do
+    for field <- Membership.source_fields(), value <- ["TEST" <> <<0>>, <<255>>] do
+      attrs = Map.put(valid_attrs(), Atom.to_string(field), value)
+      assert_invalid(attrs, field)
+    end
+  end
+
+  test "normal Unicode and meaningful multiline notes are preserved" do
+    notes = "  ملاحظات, \"source wording\"\nSecond line  "
+    attrs = Map.merge(valid_attrs(), %{"brand_name" => "نادي TEST", "notes" => notes})
+    result = changeset(attrs)
+    assert result.valid?
+    assert get_field(result, :notes) == notes
+  end
+
+  test "source URLs reject embedded credentials but permit normal HTTP and HTTPS" do
+    for value <- [
+          "https://test-user:test-only@example.com/plan",
+          "http://test-user@example.com/plan",
+          "https://@example.com/plan"
+        ] do
+      assert_invalid(Map.put(valid_attrs(), "source_url", value), :source_url)
+    end
+
+    for value <- [
+          "http://example.com/plan",
+          "https://example.com/plan",
+          "https://example.com/@plan"
+        ] do
+      assert changeset(Map.put(valid_attrs(), "source_url", value)).valid?
     end
   end
 end

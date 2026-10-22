@@ -43,6 +43,55 @@ defmodule GymIntel.ImportMembershipsWorkerDatabaseTest do
     assert Repo.aggregate(Membership, :count) == 0
   end
 
+  @tag :tmp_dir
+  test "oversized or invalid-encoding files create no queued job or imported data", %{
+    tmp_dir: dir
+  } do
+    path = Path.join(dir, "invalid.csv")
+    jobs_before = Repo.aggregate(Oban.Job, :count)
+    rows_before = Repo.aggregate(Membership, :count)
+    %{rows: [[imports_before]]} = Repo.query!("SELECT count(*) FROM membership_imports")
+
+    for {contents, reason} <- [
+          {String.duplicate("x", MembershipCSV.max_bytes() + 1), :csv_too_large},
+          {<<255>>, :invalid_utf8}
+        ] do
+      File.write!(path, contents)
+      assert {:error, ^reason} = ImportMemberships.enqueue_file(path)
+      assert Repo.aggregate(Oban.Job, :count) == jobs_before
+      assert Repo.aggregate(Membership, :count) == rows_before
+      assert %{rows: [[^imports_before]]} = Repo.query!("SELECT count(*) FROM membership_imports")
+    end
+
+    credential_url = String.replace(csv(), "example.com", "test-user:test-only@example.com")
+    File.write!(path, credential_url)
+    assert {:error, {:rows, [%{errors: %{source_url: _}}]}} = ImportMemberships.enqueue_file(path)
+    assert Repo.aggregate(Oban.Job, :count) == jobs_before
+    assert Repo.aggregate(Membership, :count) == rows_before
+    assert %{rows: [[^imports_before]]} = Repo.query!("SELECT count(*) FROM membership_imports")
+  end
+
+  test "hardening errors cancel the worker without a partial import or fingerprint" do
+    invalid = String.replace(csv(), ",100,1,", ",100.001,1,")
+    assert {:cancel, {:rows, [_]}} = perform_job(ImportMemberships, %{"csv" => invalid})
+    assert Repo.aggregate(Membership, :count) == 0
+    assert %{rows: [[0]]} = Repo.query!("SELECT count(*) FROM membership_imports")
+  end
+
+  @tag :tmp_dir
+  test "enqueue preserves original export bytes while the worker accepts its formatting", %{
+    tmp_dir: dir
+  } do
+    contents = <<0xEF, 0xBB, 0xBF>> <> String.replace(csv() <> "\n\n", "\n", "\r\n")
+    path = Path.join(dir, "export.csv")
+    File.write!(path, contents)
+    assert {:ok, job} = ImportMemberships.enqueue_file(path)
+    assert Repo.get!(Oban.Job, job.id).args == %{"csv" => contents}
+
+    assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
+             perform_job(ImportMemberships, job.args)
+  end
+
   test "legacy queued snapshots still execute after the CSV extension" do
     [header, row] = String.split(csv(), "\n", trim: true)
     header = header |> String.split(",") |> Enum.take(13) |> Enum.join(",")

@@ -181,12 +181,24 @@ comparison needs enough genuinely comparable data before controls are added.
 - The CSV header must exactly match the current 17-column contract, the payment-era 15-column contract, or the original 13-column contract; do not mix their row widths.
 - Every row must include `brand_name`, `plan_name`, `access_scope`, `source_url`, and `observed_on`.
 - A row must include at least one of `advertised_price_aed` or `minimum_commitment_months`.
-- Monetary values are AED and non-negative.
+- Monetary values are AED and non-negative. CSV money cells must use ordinary decimal text with 1–32 whole digits and optionally one or two decimal places: `199`, `199.5` and `199.50` are valid. Scientific notation (`2e2`), currency prefixes, qualifiers, signs, thousands separators, padded numeric text and extra decimal places are rejected, never stripped or rounded. Blank remains unknown and `0` remains a documented zero. Reserving two of Decimal's default 34 significant digits for fils avoids relaxing that dependency safeguard; the representation cap is a technical processing bound, not a commercial maximum price.
 - Billing periods are positive whole numbers of months; zero cannot describe a price's billing period.
 - Minimum commitments are non-negative whole numbers of months; zero means the source explicitly states no minimum commitment.
-- Dates use `YYYY-MM-DD`.
+- Dates use `YYYY-MM-DD`. `observed_on` cannot be later than today's UAE calendar date (UTC+4). A known `source_published_on` cannot be later than `observed_on`; an undisplayed publication date remains blank. Publication means publication by the gym/source, not publication of our dashboard. There is no guessed minimum historical date or automatic date correction.
 - Payment structure and renewal policy accept only their documented codes or blank; there are no defaults, source inference or historical backfills.
 - Membership-price VAT status accepts only `included`, `excluded` or blank. Admin fees must be non-negative exact numeric values or blank. Neither field supplies an implicit tax rate or an inferred zero.
+
+### Input and CSV hardening
+
+- All supported entrypoints share the original **1,000,000-byte** snapshot limit: CSV reading/parsing, direct importing, enqueueing and worker execution. The raw limit includes a BOM and line endings. File reads request at most 1,000,001 bytes to detect overflow without allocating the entire oversized file; a size-stat check alone would race with file changes.
+- UTF-8 is required. One leading UTF-8 BOM is accepted, as are LF/CRLF line endings and completely empty trailing records. Blank records between gym rows, whitespace-only trailing records, delimiter-only rows, wrong headers, missing cells and malformed quoting are not silently repaired. Quoted newlines, commas, Unicode and meaningful note whitespace are preserved.
+- Month cells use bounded whole-number representations and must fit the existing PostgreSQL integer columns (maximum 2,147,483,647). Billing remains greater than zero; minimum commitment may be zero. Enormous numeric strings are rejected before conversion. Typed integer/Decimal money inputs are bounded too; floating-point money and non-finite decimals are rejected rather than rounded.
+- NUL characters are rejected with field errors before persistence because PostgreSQL text cannot store them. Ordinary Unicode and quoted multiline notes remain allowed. No general per-field text-length cap or new restrictions on other control characters are introduced here; the CSV byte limit remains the outer bound.
+- Source URLs must retain the existing HTTP/HTTPS scheme and nonempty-host checks and must not contain embedded credentials. Syntax validation does **not** prove a source is official, reachable or current. Official-source verification remains manual; no network requests or scraping are added.
+- The enqueue function validates the bounded CSV before storing its raw contents in an Oban job. Invalid files return errors without creating a job. The worker validates again at execution; invalid legacy/directly inserted jobs are cancelled, not imported. Direct callers of Oban can bypass the enqueue function, so this is not a guarantee that all existing job arguments are credential-free or redacted.
+- Row errors identify the CSV record (header is record 1) and field. No rejected batch writes memberships or a fingerprint, even if earlier rows were valid. Completely empty files still report a missing header; header-only snapshots remain valid no-ops.
+- Parsing tolerates export formatting without changing the queued snapshot or the raw-byte fingerprint. The same observations in a BOM/CRLF export therefore have a different file fingerprint but are skipped by the existing parsed-row duplicate check. Observation identity, notes-in-identity and database uniqueness are unchanged and belong to the next feature.
+- These application checks do not retrofit database constraints or repair historical records, and do not resolve the separately documented Decimal dependency advisory. Tests use a fixed reference day for date boundaries and the isolated test database for no-partial-write evidence.
 
 ## Duplicate observations during import
 

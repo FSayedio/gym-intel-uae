@@ -7,10 +7,7 @@ defmodule GymIntel.MembershipImporter do
   alias GymIntel.{Membership, MembershipCSV, Repo}
 
   def import_file(path) do
-    case File.read(path) do
-      {:ok, contents} -> import_csv(contents)
-      {:error, reason} -> {:error, {:file, reason}}
-    end
+    with {:ok, contents} <- MembershipCSV.read_contents(path), do: import_csv(contents)
   end
 
   def import_csv(contents) do

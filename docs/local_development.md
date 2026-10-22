@@ -246,6 +246,19 @@ See `docs/data_contract.md` for the current graph rules and source limitations.
 
 ## Queue a membership CSV
 
+Input rules are described in [Input and CSV hardening](data_contract.md#input-and-csv-hardening).
+The enqueue function now reads at most 1,000,001 bytes and rejects oversized,
+invalid-encoding or invalid-row input before creating a job. It preserves the
+original accepted bytes in the snapshot. The worker validates again when it
+runs; jobs manually inserted through Oban or queued under older rules may be
+cancelled if their snapshot fails today's validation rules.
+
+For example, `199.50` is accepted as a price, but `199.999` and `2e2` return a
+record/field error rather than being rounded or reinterpreted. A leading UTF-8
+BOM and completely empty trailing records are accepted; missing columns and
+blank records between offers are still errors. Observation dates use the UAE
+day (UTC+4), and a known source publication date must not follow observation.
+
 The project `data` directory is mounted read-only at `/app/data`. Collect and
 verify official source facts manually before adding rows; there is no scraper,
 gym API integration, or automatic schedule. The original CSV contains three
@@ -269,7 +282,9 @@ The submitting process has no queues; the running app executes the job. The job
 stores the UTF-8 file contents, limited to 1,000,000 bytes, rather than a mutable
 file path. These contents remain in Oban's job record; do not submit secrets.
 One import executes at a time per app instance. Unexpected failures have up to
-three total attempts; invalid input cancels. No periodic pruning is configured.
+three total attempts. Invalid input at enqueue returns an error without a job;
+invalid snapshots already in the queue are cancelled by the worker. No periodic
+pruning is configured.
 
 Inspect job state (enqueueing is not proof of completion):
 
