@@ -4,7 +4,9 @@ defmodule GymIntel.MembershipCSV do
   alias GymIntel.Membership
   alias NimbleCSV.RFC4180, as: CSV
 
-  @headers ~w(brand_name branch_name plan_name access_scope offer_type advertised_price_aed billing_period_months minimum_commitment_months joining_fee_aed source_url source_published_on observed_on notes)
+  @legacy_headers ~w(brand_name branch_name plan_name access_scope offer_type advertised_price_aed billing_period_months minimum_commitment_months joining_fee_aed source_url source_published_on observed_on notes)
+  @payment_headers @legacy_headers ++ ~w(payment_structure renewal_policy)
+  @headers @payment_headers ++ ~w(price_vat_status admin_fee_aed)
 
   def headers, do: @headers
 
@@ -25,17 +27,22 @@ defmodule GymIntel.MembershipCSV do
 
   defp parse_utf8(contents) do
     case CSV.parse_string(contents, skip_headers: false) do
-      [] -> {:error, :missing_header}
-      [@headers | rows] -> validate_rows(rows)
-      [_header | _rows] -> {:error, :header_mismatch}
+      [] ->
+        {:error, :missing_header}
+
+      [headers | rows] when headers in [@headers, @payment_headers, @legacy_headers] ->
+        validate_rows(rows, headers)
+
+      [_header | _rows] ->
+        {:error, :header_mismatch}
     end
   rescue
     NimbleCSV.ParseError -> {:error, :malformed_csv}
   end
 
-  defp validate_rows(rows) do
+  defp validate_rows(rows, headers) do
     # Record 1 is the header. A quoted multiline value is still one record.
-    results = Enum.with_index(rows, 2) |> Enum.map(&validate_row/1)
+    results = Enum.with_index(rows, 2) |> Enum.map(&validate_row(&1, headers))
     errors = for {:error, error} <- results, do: error
 
     if errors == [] do
@@ -45,13 +52,13 @@ defmodule GymIntel.MembershipCSV do
     end
   end
 
-  defp validate_row({cells, record}) when length(cells) != length(@headers) do
+  defp validate_row({cells, record}, headers) when length(cells) != length(headers) do
     {:error,
-     %{record: record, reason: :column_count, expected: length(@headers), actual: length(cells)}}
+     %{record: record, reason: :column_count, expected: length(headers), actual: length(cells)}}
   end
 
-  defp validate_row({cells, record}) do
-    attrs = Map.new(Enum.zip(@headers, cells))
+  defp validate_row({cells, record}, headers) do
+    attrs = Map.new(Enum.zip(headers, cells))
     changeset = Membership.changeset(%Membership{}, attrs)
 
     case Ecto.Changeset.apply_action(changeset, :insert) do

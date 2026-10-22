@@ -11,4 +11,5 @@ docker compose run --rm --no-deps \
   -e DATABASE_PASSWORD_FILE=/run/secrets/test_owner_password \
   -v "$project_dir/.secrets/postgres_password:/run/secrets/test_owner_password:ro" \
   -v "$project_dir/test:/app/test:ro" \
+  -v "$project_dir/grafana:/app/grafana:ro" \
   app sh -c 'mix ecto.create && mix ecto.migrate && mix test --no-start'

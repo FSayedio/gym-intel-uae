@@ -14,7 +14,7 @@ defmodule GymIntel.MembershipImporterDatabaseTest do
 
     rows =
       Enum.map(brands, fn brand ->
-        "#{brand},,Synthetic plan,all_uae_branches,,100,1,,,https://example.com,,2026-09-12,TEST ONLY"
+        "#{brand},,Synthetic plan,all_uae_branches,,100,1,,,https://example.com,,2026-09-12,TEST ONLY,,,,"
       end)
 
     Enum.join([header | rows], "\n") <> "\n"
@@ -117,6 +117,126 @@ defmodule GymIntel.MembershipImporterDatabaseTest do
         ] do
       assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
                MembershipImporter.import_csv(changed)
+    end
+  end
+
+  test "new payment facts are retained and identical classified observations are skipped" do
+    contents = csv(["TEST PAYMENT HISTORY"])
+
+    assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
+             MembershipImporter.import_csv(contents)
+
+    classified = String.replace(contents, "TEST ONLY,,", "TEST ONLY,prepaid_term,non_automatic")
+
+    assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
+             MembershipImporter.import_csv(classified)
+
+    assert {:ok, {:imported, %{inserted: 0, skipped: 1}}} =
+             MembershipImporter.import_csv(String.replace(classified, ",100,1,", ",100.00,1,"))
+
+    changed = String.replace(classified, "non_automatic", "automatic")
+    assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} = MembershipImporter.import_csv(changed)
+    changed = String.replace(classified, "prepaid_term", "recurring")
+    assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} = MembershipImporter.import_csv(changed)
+  end
+
+  test "legacy and new blank headers describe the same observation" do
+    current = csv(["TEST LEGACY DEDUPE"])
+    [header, row] = String.split(current, "\n", trim: true)
+    legacy_header = header |> String.split(",") |> Enum.take(13) |> Enum.join(",")
+    legacy_row = row |> String.split(",") |> Enum.take(13) |> Enum.join(",")
+    legacy = legacy_header <> "\n" <> legacy_row <> "\n"
+
+    assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} = MembershipImporter.import_csv(legacy)
+    assert {:ok, {:imported, %{inserted: 0, skipped: 1}}} = MembershipImporter.import_csv(current)
+  end
+
+  test "database constraints reject unknown payment codes even when bypassing changesets" do
+    for {column, constraint} <- [
+          {"payment_structure", "memberships_payment_structure_allowed"},
+          {"renewal_policy", "memberships_renewal_policy_allowed"}
+        ] do
+      error =
+        assert_raise Postgrex.Error, fn ->
+          Repo.query!(
+            """
+            INSERT INTO memberships
+              (brand_name, plan_name, access_scope, advertised_price_aed, billing_period_months,
+               source_url, observed_on, inserted_at, updated_at, #{column})
+            VALUES ('TEST CONSTRAINT', 'TEST ONLY', 'all_uae_branches', 100, 1,
+              'https://example.com', '2026-09-12', now(), now(), 'guessed')
+            """,
+            [],
+            mode: :savepoint
+          )
+        end
+
+      assert error.postgres.constraint == constraint
+    end
+  end
+
+  test "VAT/admin changes are retained but numerically equivalent fees are deduplicated" do
+    original = csv(["TEST VAT HISTORY"])
+
+    assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
+             MembershipImporter.import_csv(original)
+
+    classified = String.replace(original, "TEST ONLY,,,,", "TEST ONLY,,,included,30")
+
+    assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
+             MembershipImporter.import_csv(classified)
+
+    assert {:ok, {:imported, %{inserted: 0, skipped: 1}}} =
+             MembershipImporter.import_csv(
+               String.replace(classified, "included,30", "included,30.00")
+             )
+
+    for changed <- [
+          String.replace(classified, "included", "excluded"),
+          String.replace(classified, "included,30", "included,0")
+        ] do
+      assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
+               MembershipImporter.import_csv(changed)
+    end
+  end
+
+  test "15-column payment snapshots and 17-column blank extensions deduplicate" do
+    contents = csv(["TEST VAT LEGACY"])
+    records = NimbleCSV.RFC4180.parse_string(contents, skip_headers: false)
+
+    legacy =
+      records
+      |> Enum.map(&Enum.take(&1, 15))
+      |> NimbleCSV.RFC4180.dump_to_iodata()
+      |> IO.iodata_to_binary()
+
+    assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} = MembershipImporter.import_csv(legacy)
+
+    assert {:ok, {:imported, %{inserted: 0, skipped: 1}}} =
+             MembershipImporter.import_csv(contents)
+  end
+
+  test "database enforces VAT allowlist and nonnegative admin fee without a changeset" do
+    for {column, value, constraint} <- [
+          {"price_vat_status", "'assumed'", "memberships_price_vat_status_allowed"},
+          {"admin_fee_aed", "-1", "memberships_admin_fee_non_negative"}
+        ] do
+      error =
+        assert_raise Postgrex.Error, fn ->
+          Repo.query!(
+            """
+            INSERT INTO memberships
+              (brand_name, plan_name, access_scope, advertised_price_aed, billing_period_months,
+               source_url, observed_on, inserted_at, updated_at, #{column})
+            VALUES ('TEST VAT CONSTRAINT', 'TEST ONLY', 'all_uae_branches', 100, 1,
+              'https://example.com', '2026-09-12', now(), now(), #{value})
+            """,
+            [],
+            mode: :savepoint
+          )
+        end
+
+      assert error.postgres.constraint == constraint
     end
   end
 end

@@ -64,13 +64,82 @@ defmodule GymIntel.MembershipTest do
   end
 
   test "monetary fields reject negative and non-numeric values but accept zero" do
-    for field <- ~w(advertised_price_aed joining_fee_aed) do
+    for field <- ~w(advertised_price_aed joining_fee_aed admin_fee_aed) do
       for bad <- ["-1", "unknown", "AED 100"] do
         assert_invalid(Map.put(valid_attrs(), field, bad), String.to_existing_atom(field))
       end
 
       assert changeset(Map.put(valid_attrs(), field, "0")).valid?
     end
+  end
+
+  test "payment and renewal classifications are independent and unknown stays nil" do
+    for payment <- ["prepaid_term", "recurring"], renewal <- ["automatic", "non_automatic"] do
+      result =
+        valid_attrs()
+        |> Map.merge(%{"payment_structure" => payment, "renewal_policy" => renewal})
+        |> changeset()
+
+      assert result.valid?
+      assert get_field(result, :payment_structure) == payment
+      assert get_field(result, :renewal_policy) == renewal
+    end
+
+    for field <- ~w(payment_structure renewal_policy) do
+      for value <- ["", "   ", nil] do
+        result = changeset(Map.put(valid_attrs(), field, value))
+        assert result.valid?
+        assert get_field(result, String.to_existing_atom(field)) == nil
+      end
+
+      for value <- ["unknown", "guessed", "0"] do
+        assert_invalid(Map.put(valid_attrs(), field, value), String.to_existing_atom(field))
+      end
+    end
+  end
+
+  test "monthly billing does not imply a payment structure or renewal policy" do
+    result = changeset(valid_attrs())
+    assert get_field(result, :billing_period_months) == 1
+    assert get_field(result, :payment_structure) == nil
+    assert get_field(result, :renewal_policy) == nil
+  end
+
+  test "VAT status requires an explicit supported classification, never an inferred rate" do
+    for status <- ["included", "excluded"] do
+      result = changeset(Map.put(valid_attrs(), "price_vat_status", status))
+      assert result.valid?
+      assert get_field(result, :price_vat_status) == status
+    end
+
+    for status <- ["unknown", "5%", "exempt", "0"] do
+      assert_invalid(Map.put(valid_attrs(), "price_vat_status", status), :price_vat_status)
+    end
+
+    for value <- [nil, "", "   "] do
+      result = changeset(Map.put(valid_attrs(), "price_vat_status", value))
+      assert result.valid?
+      assert get_field(result, :price_vat_status) == nil
+    end
+  end
+
+  test "membership VAT and a zero joining fee do not establish an admin fee" do
+    result =
+      changeset(
+        Map.merge(valid_attrs(), %{"price_vat_status" => "included", "joining_fee_aed" => "0"})
+      )
+
+    assert result.valid?
+    assert get_field(result, :admin_fee_aed) == nil
+
+    result =
+      changeset(
+        Map.merge(valid_attrs(), %{"joining_fee_aed" => "199", "admin_fee_aed" => "30.00"})
+      )
+
+    assert get_field(result, :price_vat_status) == nil
+    assert Decimal.equal?(get_field(result, :joining_fee_aed), Decimal.new("199"))
+    assert Decimal.equal?(get_field(result, :admin_fee_aed), Decimal.new("30"))
   end
 
   test "billing period must be a positive whole number" do
