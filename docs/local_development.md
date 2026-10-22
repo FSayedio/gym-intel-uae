@@ -307,12 +307,30 @@ Database tests refuse any other database name. Synthetic rows and test jobs use
 sandbox transactions and are rolled back after each test. The test database and
 its migrated tables remain for later runs. Tests cover validation, CSV parsing,
 atomic saves, duplicate handling, enqueueing, and worker execution through Oban's
-test helper. Dashboard regression tests execute actual panel and variable SQL
-loaded from the read-only mounted dashboard JSON. They mirror Grafana's
-`sqlstring` quoting for access, commitment, payment, renewal and VAT selections and check that unknown or
-conflicting conditions cannot qualify. Their synthetic observations are confined
-to sandbox transactions in the test database. A live queue smoke check is
-separate from those tests. No CI is set up.
+test helper. Dashboard regression tests execute the actual graph/table SQL loaded
+from the read-only mounted dashboard JSON. They verify latest-observation
+selection, conflicting terms, unknown-versus-zero handling, and graph/table
+agreement. Their synthetic observations are confined to sandbox transactions in
+the test database. A live queue smoke check is separate from those tests.
+
+## Automatic PR checks
+
+See [CI and manual review governance](ci.md) for the workflow, its isolated
+PostgreSQL test service, shared check script, and actual completion criteria.
+The workflow validates Compose, builds the ARM64 app image, checks formatting and
+compilation, applies fresh migrations, and runs all tests on GitHub. It does not
+connect to this laptop or import development data. It uses the account's Actions
+minutes; no upgrade or spending-setting change is made.
+
+After rebuilding the app image, `sh scripts/test-database.sh --ci` runs the shared
+locked-dependency / formatting / compile / migration / test checks locally against
+`gym_intel_test`. The no-argument test command remains available. Local tests may
+reuse the test database; GitHub's job applies migrations to a fresh database.
+
+Our merge rule is manual: inspect a successful check for the latest reviewed
+commit before merging. The private repository does not have an enforced required
+check or required-review rule configured. A green older commit, missing run,
+cancelled job or skipped check is not a substitute. The assistant never merges.
 
 ## Stop
 

@@ -1,0 +1,75 @@
+name: CI
+
+"on":
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  quality:
+    name: CI checks (ARM64)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    env:
+      CI_IMAGE: gym-intel-ci:${{ github.sha }}
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_USER: gym_intel
+          POSTGRES_DB: postgres
+          # Disposable CI database only; never a local/production credential.
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+        ports:
+          - "127.0.0.1:5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U gym_intel -d postgres"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 15
+    steps:
+      - name: Check out this revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7, pinned
+        with:
+          persist-credentials: false
+
+      - name: Record tested revision
+        run: |
+          git show --no-patch --format='Tested commit: %H%nParents: %P'
+
+      - name: Validate local Compose configuration
+        run: docker compose config --quiet
+
+      - name: Build application image
+        run: docker build --tag "$CI_IMAGE" .
+
+      - name: Check formatting, compilation, fresh migrations and all tests
+        shell: bash
+        run: |
+          umask 077
+          password_file="$RUNNER_TEMP/gym-intel-ci-database-password"
+          printf '%s' 'ci-only-password' > "$password_file"
+          docker run --rm --network host \
+            --env MIX_ENV=test \
+            --env RUN_DB_TESTS=true \
+            --env DATABASE_NAME=gym_intel_test \
+            --env DATABASE_HOST=127.0.0.1 \
+            --env DATABASE_PORT=5432 \
+            --env DATABASE_USER=gym_intel \
+            --env DATABASE_PASSWORD_FILE=/run/secrets/ci_database_password \
+            --volume "$password_file:/run/secrets/ci_database_password:ro" \
+            --volume "$GITHUB_WORKSPACE/.formatter.exs:/app/.formatter.exs:ro" \
+            --volume "$GITHUB_WORKSPACE/scripts:/app/scripts:ro" \
+            --volume "$GITHUB_WORKSPACE/test:/app/test:ro" \
+            --volume "$GITHUB_WORKSPACE/data:/app/data:ro" \
+            --volume "$GITHUB_WORKSPACE/grafana:/app/grafana:ro" \
+            "$CI_IMAGE" sh scripts/ci-checks.sh
