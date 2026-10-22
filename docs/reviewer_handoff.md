@@ -29,9 +29,10 @@ this branch/revision, not assume GitHub main contains the dashboard.
 
 Use [Local development](local_development.md) for exact commands. In order:
 
-1. Start the three-service stack; the app applies migrations on startup.
-2. Run `priv/grafana_reader.sql` against the development database to grant the
-   dedicated Grafana login SELECT on memberships. Start/recreate Grafana.
+1. Generate local secrets, build the app, start PostgreSQL, configure roles,
+   and run `sh scripts/migrate.sh`, then start the full three-service stack.
+2. Role setup grants the dedicated Grafana login SELECT on memberships.
+   Run `sh scripts/verify-permissions.sh` for the role-isolation checks.
 3. Queue `data/memberships.csv` using the documented enqueue command. Inspect
    Oban job state until completed; enqueue success alone is not import success.
 4. Open <http://127.0.0.1:3000/d/gym-intel-offers> on the machine running Docker.
@@ -84,15 +85,22 @@ Paths abbreviated in the table share their row's stated directory.
   a cheapest-gym ranking. Branch and plan details remain essential evidence.
 - Three Dubai branches are not UAE-wide coverage. Attendance, equipment,
   facilities, opening hours, and branch-footprint dashboards are not implemented.
-- PostgreSQL trust authentication and anonymous Grafana Admin are local-only
-  shortcuts, not a security boundary. The reader's grants are restricted, but
-  this deployment must not be exposed publicly or used for sensitive data.
+- Grafana anonymous access is Viewer, with a local secret for administrator
+  login. PostgreSQL requires SCRAM passwords for socket and network connections;
+  Grafana receives a separate reader password. The running app uses a limited
+  runtime account; migration credentials are mounted only for explicit tasks.
+  The bootstrap owner remains a superuser in the PostgreSQL container; anyone
+  controlling Docker or its private secret can administer the database.
+  Keep this deployment local.
 - CSV snapshots persist in job arguments; no periodic job pruning is configured.
   File size is limited to 1 MB and queue concurrency is one per app instance.
 - Migration rollback, backup/restore, clean-machine setup, concurrent multi-app
   load, and automated dashboard regression checks remain unverified.
 - Full tests passed with an upstream Mix xref deprecation warning; compilation
   succeeded. No claim of CI, load testing, or production readiness is made.
+- The 22 October 2026 security-containment rebuild reported a Hex advisory for
+  Decimal 3.1.1 (EEF-CVE-2026-97853). The build succeeded; advisory assessment
+  and dependency remediation remain pending as separate follow-up work.
 
 ## Requested reviewer output
 

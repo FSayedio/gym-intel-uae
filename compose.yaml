@@ -7,9 +7,16 @@ services:
     environment:
       POSTGRES_DB: gym_intel_dev
       POSTGRES_USER: gym_intel
-      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    command: ["postgres", "-c", "hba_file=/etc/postgresql/pg_hba.conf"]
+    secrets:
+      - postgres_password
+      - grafana_database_password
+      - postgres_app_password
+      - postgres_migrator_password
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gym_intel -d gym_intel_dev"]
+      test: ["CMD-SHELL", "sh /opt/gym-intel/psql.sh --host=127.0.0.1 --tuples-only --no-align --command='SELECT 1' > /dev/null"]
       interval: 2s
       timeout: 3s
       retries: 15
@@ -17,6 +24,13 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
+      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./postgres/psql.sh:/opt/gym-intel/psql.sh:ro
+      - ./postgres/role-psql.sh:/opt/gym-intel/role-psql.sh:ro
+      - ./postgres/configure-reader.sh:/opt/gym-intel/configure-reader.sh:ro
+      - ./postgres/configure-roles.sh:/opt/gym-intel/configure-roles.sh:ro
+      - ./priv/database_roles.sql:/opt/gym-intel/database_roles.sql:ro
+      - ./priv/grafana_reader.sql:/opt/gym-intel/grafana_reader.sql:ro
 
   app:
     build:
@@ -27,27 +41,37 @@ services:
         condition: service_healthy
     environment:
       DATABASE_NAME: gym_intel_dev
-      DATABASE_USER: gym_intel
+      DATABASE_USER: gym_intel_app
       DATABASE_HOST: postgres
       DATABASE_PORT: "5432"
       DATABASE_POOL_SIZE: "5"
+      DATABASE_PASSWORD_FILE: /run/secrets/postgres_app_password
+    secrets:
+      - postgres_app_password
     volumes:
       - ./data:/app/data:ro
 
   grafana:
     image: grafana/grafana:13.2
     platform: linux/arm64
+    entrypoint: ["/bin/sh", "/opt/gym-intel/grafana-start.sh"]
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
-      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+    secrets:
+      - grafana_admin_password
+      - grafana_database_password
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/start.sh:/opt/gym-intel/grafana-start.sh:ro
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ./grafana/dashboards:/var/lib/grafana/project-dashboards:ro
@@ -55,3 +79,15 @@ services:
 volumes:
   postgres_data:
   grafana_data:
+
+secrets:
+  grafana_admin_password:
+    file: ./.secrets/grafana_admin_password
+  postgres_password:
+    file: ./.secrets/postgres_password
+  grafana_database_password:
+    file: ./.secrets/grafana_database_password
+  postgres_app_password:
+    file: ./.secrets/postgres_app_password
+  postgres_migrator_password:
+    file: ./.secrets/postgres_migrator_password

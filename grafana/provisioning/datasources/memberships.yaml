@@ -8,6 +8,8 @@ datasources:
     url: postgres:5432
     user: gym_intel_grafana
     editable: false
+    secureJsonData:
+      password: $GYM_INTEL_DATABASE_PASSWORD
     jsonData:
       database: gym_intel_dev
       sslmode: disable

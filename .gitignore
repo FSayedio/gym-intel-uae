@@ -5,6 +5,7 @@
 .env
 .env.*
 !.env.example
+.secrets/
 
 # Elixir build outputs and downloaded dependencies
 _build/
