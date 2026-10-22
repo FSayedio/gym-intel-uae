@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/mattpocock/skills",
+  "revision": "5beb35b040e3de97e54fa9e386d7e42d15c295c2",
+  "installed_on": "2026-10-22",
+  "license": "MIT",
+  "license_file": "LICENSE.mattpocock",
+  "skills": {
+    "grill-me": "skills/productivity/grill-me",
+    "grilling": "skills/productivity/grilling"
+  },
+  "upstream_skill_files_modified": false,
+  "project_workflow_overrides": "../../AGENTS.md"
+}
