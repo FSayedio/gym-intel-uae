@@ -201,72 +201,56 @@ Git rather than saving dashboard changes through the UI. Grafana polls dashboard
 files every 30 seconds. This does not fetch new gym facts or automatically import
 CSV changes. Use the dashboard Refresh button after an import.
 
-Expected after importing the initial CSV: three overview bars (GymNation 209,
-PureGym 199, Warehouse 363 AED/month) and three evidence-history rows dated
-2026-09-12. Original plan names remain unchanged; readable access, payment-period
-and commitment labels interpret the existing fields. Payment structure and
-renewal are separate evidence columns. Membership-price VAT and one-time admin
-fees have their own columns, separate from joining fees. The additive migrations leave these
-NULL on historical observations; it does not infer facts or backfill gym terms.
-Blank commitments, classifications and joining fees display Unknown, not zero.
-Prices come from SQL, not hardcoded
-panel values. There is no automatic marketing-name-to-tier classifier.
+The current dashboard is one vertical bar chart, a compact conditions table
+directly below it, and a short visible evidence warning. There are no filter
+variables. Gym names are shown in a right-hand colour-coded legend rather
+than below the bars. A Rows to fields transformation turns offer rows into named
+series while preserving source/date/terms as labels; Concatenate fields adds a
+visually blank category from a display-only query (`chr(8203)`, a zero-width
+text marker). This avoids Grafana substituting a missing-value message or
+coercing whitespace to 0. It does not create or import data.
+With both `data/memberships.csv` and
+`data/memberships-2026-10-22.csv` imported, expect four bars: GymNation 209,
+La Maison de la Masse 1,500, PureGym 199 and Warehouse 363 AED/month.
+Warehouse's September check date is retained in metadata, not its legend name; its audited access scope
+remains unresolved. Other displayed records are dated 22 October. None is a
+live quote or an equivalent-benefits / total-cost comparison.
 
-The chart selects the newest date with known monthly single-branch prices for
-all three offers explicitly listed in `docs/data_contract.md`. It preserves the
-previous complete set when a newer collection is partial or incompatible. A
-conflicting price for a selected offer prevents that date from qualifying.
-The query returns `Observed` alongside its numeric values. No complete date
-produces No data; dates are never mixed within the chart.
+Each brand/branch/original-plan identity uses its latest recorded observation.
+There is no fixed three-gym selection. A newer unknown price, non-monthly
+billing, incompatible access or conflicting terms suppresses that offer rather
+than substituting an older price. Duplicate corroborating evidence yields one
+bar. Dates can differ and remain available from the bars' source details.
 
-The filtered chart uses the same overview date, fixes access to Single branch
-for the current selected set, and offers minimum-commitment, payment-structure
-renewal-policy and membership-price VAT selectors. At least two distinct gym brands must match access,
-monthly billing, known commitment, known payment structure, known renewal and known price VAT basis;
-unknown or conflicting terms exclude an offer. With the existing records, both No
-minimum commitment and 3 months produce **Not enough comparable offers** and no
-filtered bars. That result is intentional, not a connection failure. Filters
-do not affect the overview or evidence history. User values are interpolated
-using Grafana's SQL-string quoting, not inserted as raw SQL.
+The five table columns are Gym, Branch, Minimum commitment, Joining / admin
+fees, and Payment / renewal / VAT. Each combined cell labels its individual
+facts; joining and admin fees are never merged into one amount. Unknown stays
+Unknown, distinct from a documented zero. Membership VAT does not establish
+the tax treatment of fees. For example, GymNation's 209 bar has a 12-month
+minimum, AED 199 joining and AED 30 admin; PureGym's 199 bar has no minimum,
+AED 89 joining and an unknown admin fee. The bars are not payable totals.
 
-Current CSV headers have 17 columns, appending `payment_structure`,
-`renewal_policy`, `price_vat_status` and `admin_fee_aed` after `notes`.
-Historical 13- and 15-column files and queued snapshots still parse with their
-missing fields unknown; the checked-in original observations
-are deliberately unchanged. Rebuild the app and run `sh scripts/migrate.sh`
-before loading the updated provisioned dashboard SQL. This nullable-column
-migration preserves existing rows and source values. A newly sourced prepaid
-term must not be grouped with recurring payments merely because both cover a
-month; neither classification determines its automatic-renewal policy.
+The table repeats the graph's exact selection CTEs, eligibility and ordering;
+tests guard against drift for latest, unknown, conflicting and duplicate records.
+It is not the old all-history evidence table. Click a bar or a linked gym name
+for its official source and check date. Full original-plan/source notes remain
+in Inspect data; the table retains that metadata as hidden columns for links
+and inspection. Stored history is unchanged. Bars and table remain alphabetical,
+not a cheapest or best-gym ranking. The visible warning discloses differing dates
+and terms and Warehouse's unresolved historical access scope.
 
-The VAT selector contains only VAT included / VAT excluded. Unknown or conflicting
-membership-price VAT does not qualify. The filtered chart title states its VAT
-basis; an excluded-VAT chart shows pre-VAT source charges, not amounts payable.
-No tax rate is assumed or applied. Historical overview amounts are not converted
-and may have unknown or differing tax treatment, which is explicitly warned.
-The VAT flag does not establish how separate fees are taxed. No joining fee does
-not imply no admin fee; no total-cost or first-payment calculation is implemented.
-Other mandatory charges and their timing remain outside this two-field extension.
-
-The evidence table includes all recorded observations and dates, including
-unknown prices and annual offers. Its numeric price is the native advertised
-amount, with Payment covers identifying the period; an annual price must not
-be mislabelled monthly. The hidden time picker does not filter these panels.
-
-This is an advertised-charge overview, not an all-in-cost or value ranking.
-Even the filtered charge chart matches only the named dimensions: fees, tax
-treatment, offer type and facilities may differ. Read the warning and source
-notes; do not infer that alphabetically ordered bars are equivalent memberships.
-The source audit in `docs/data_contract.md` is not imported data. It identifies
-unresolved Warehouse scope and mandatory-fee modelling gaps; no current purchase
-quote or all-in-cost calculation is claimed.
+This presentation update needs no migration or app rebuild. Current CSVs still
+use the 17-column contract; historical 13-/15-column snapshots remain accepted.
+The schema, source-verification requirements and import behaviour are unchanged.
+See `docs/data_contract.md` for the current graph rules and source limitations.
 
 ## Queue a membership CSV
 
 The project `data` directory is mounted read-only at `/app/data`. Collect and
 verify official source facts manually before adding rows; there is no scraper,
-gym API integration, or automatic schedule. The current CSV contains three
-official-source observations from 12 September 2026. See `docs/data_contract.md`
+gym API integration, or automatic schedule. The original CSV contains three
+observations from 12 September 2026; the separate dated October CSV adds three
+fresh observations, including one new brand. See `docs/data_contract.md`
 and each row's notes for unresolved terms; these are not verified all-in costs.
 
 After rebuilding the app with the command above, enqueue the file:

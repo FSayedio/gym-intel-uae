@@ -1,5 +1,47 @@
 # Pricing MVP — reviewer handoff
 
+## Current display update — 22 October 2026
+
+The dashboard is now a single vertical advertised-monthly-charge graph, with
+a compact five-column conditions table directly below, a short visible evidence
+warning, and no filters. With both checked-in CSV snapshots imported it
+shows four offers; observation dates remain metadata, while Warehouse's unresolved
+historical access scope is disclosed. Dates and conditions remain accessible
+from the bars and linked gym names. The table shows Gym, Branch, Minimum
+commitment, Joining / admin fees, and Payment / renewal / VAT. Combined cells
+label facts separately; unknowns never become zero. Both queries select the same
+offers and order, including exclusion of newer unknown/conflicting observations.
+The graph is not a matched-contract or all-in-cost comparison. Warehouse's
+unresolved scope is also disclosed visibly rather than only in panel details.
+See `docs/local_development.md` and `docs/data_contract.md` for current behaviour.
+The filter/overview/history descriptions below document earlier review
+checkpoints and are superseded for the current display. Stored history,
+validation, Oban, PostgreSQL and role isolation remain in place.
+
+### Current change: before, action, after, evidence
+
+- **Before:** the original overview, filtered chart and broad history table
+  required interpreting several views; the intermediate graph-only layout hid
+  important conditions in bar details.
+- **Action:** retain one vertical graph with a right-hand gym legend; add five
+  compact conditions columns for the same selected offers, a visible evidence
+  warning, linked source/check-date metadata and graph/table parity tests.
+- **After:** a user can see a monthly charge alongside branch, commitment,
+  separate joining/admin fees, payment, renewal and membership VAT. For example,
+  GymNation's AED 209 carries a 12-month minimum while PureGym's AED 199 has no
+  minimum; neither is an all-in-cost or equivalent-benefits claim.
+- **Evidence:** `sh scripts/test-database.sh` reported **82 passed** in the
+  isolated test database. Grafana's loaded queries returned the same four offers
+  and dates, with prices 209 / 1,500 / 199 / 363. Its health endpoint reported
+  `database: ok`, and its memberships datasource reported `OK`. Safari showed
+  five table headers and four offer rows; the GymNation link resolved its
+  official source and 22 October check date. Text wrapping was visible. Git's
+  whitespace check passed. No new import or migration was run for the layout.
+- **Limits:** this is an offer explorer, not a matched-contract comparison.
+  Dates differ, source notes retain unresolved terms, and Warehouse's historical
+  access scope is unresolved. Bar-click interaction was not independently
+  reverified in this layout checkpoint; table source-link resolution was.
+
 Prepared 12 September 2026. This is a local, learning-first prototype, not a
 production deployment or a comprehensive UAE gym ranking.
 
@@ -33,16 +75,19 @@ Use [Local development](local_development.md) for exact commands. In order:
    and run `sh scripts/migrate.sh`, then start the full three-service stack.
 2. Role setup grants the dedicated Grafana login SELECT on memberships.
    Run `sh scripts/verify-permissions.sh` for the role-isolation checks.
-3. Queue `data/memberships.csv` using the documented enqueue command. Inspect
-   Oban job state until completed; enqueue success alone is not import success.
+3. Queue `data/memberships.csv`, then `data/memberships-2026-10-22.csv`, using
+   the documented enqueue command with each path. Inspect Oban job state until
+   completed; enqueue success alone is not import success.
 4. Open <http://127.0.0.1:3000/d/gym-intel-offers> on the machine running Docker.
 5. Run the full test command using **gym_intel_test**, not the development DB.
 
-Expected initial observations: GymNation Downtown Dubai Core **209**, PureGym
-Dubai Al Barsha CORE **199**, and The Warehouse Gym IBN Battuta Mall Light
-Monthly **363**, in AED per month, observed 12 September 2026. Unknown fees and
-commitments are not zero. These are recorded observations, not freshly rechecked
-prices. Re-importing the identical file should not add more memberships.
+Expected after both snapshots: six stored observations across four brands,
+displaying GymNation Downtown Dubai Core **209**, La Maison de la Masse Al Quoz 2
+Monthly open gym **1,500**, PureGym Dubai Al Barsha CORE **199**, and The Warehouse
+Gym IBN Battuta Mall Light Monthly **363**, in AED per month. The first three
+displayed observations are dated 22 October; Warehouse remains 12 September.
+Unknown fees and commitments are not zero. These are recorded observations, not
+live quotes. Re-importing an identical file should not add more memberships.
 
 The localhost URL is not a remotely shareable hosted dashboard. Reviewers need
 repository access and their own running stack, or a screen-sharing session.
