@@ -1,5 +1,11 @@
 # Local development
 
+Detailed configuration reference. Start with the shorter
+[operator runbook](operator_runbook.md) for the current everyday sequence and
+expected results; use the [reviewer handoff](reviewer_handoff.md) for dated
+evidence and the [roadmap](roadmap.md) for remaining work. Historical transitions
+below are not a reason to rerun upgrades on an already-current stack.
+
 The MVP foundation runs exactly three Docker services:
 
 - `app`: an Elixir application that connects through Ecto and starts Oban.
@@ -53,9 +59,15 @@ mounts resolve the current files by pathname. This does not change the named
 database volume or solve arbitrary secret-file rotation; credentials remain
 separate file mounts and may require recreation when replaced.
 
-An existing stack needs one PostgreSQL-container recreation to apply those mount
-changes. Confirm no pending jobs, pause the app, take a private database backup,
-and record data checksums/volume identity first. Then run:
+### Historical transition to directory mounts
+
+Only an older stack still using the former individual tracked-file mounts needs
+this transition. It was already applied to the development stack in Feature 6;
+do not recreate PostgreSQL on every pull. Confirm no pending jobs, control new
+submissions, pause the app, agree a private backup/recovery plan, and record data
+checksums/volume identity first. See the
+[maintenance boundaries](operator_runbook.md#6-maintenance-boundaries).
+After those prerequisites and explicit approval for the targeted recreation:
 
 ```bash
 docker compose up -d --no-deps --force-recreate --wait postgres
@@ -126,7 +138,10 @@ connections, including existing volumes. `POSTGRES_PASSWORD_FILE` sets the
 initial owner password only when the PostgreSQL data directory is empty.
 Changing that setting does not reset an existing account's password.
 
-For an existing trust-authenticated volume, set the account passwords before
+### Historical trust-to-SCRAM transition
+
+This is not the normal startup sequence. For an existing trust-authenticated
+volume only, set the account passwords before
 recreating the services with the new connection rules. Preserve existing data
 and take a database backup first. With the old trust rules still running:
 
@@ -158,6 +173,10 @@ or print the environment. Keep the secret files in sync with any password change
 
 ## Start and verify
 
+For a new stack or the current already-upgraded schema. Older-schema/mount
+transitions need their reviewed maintenance plan first. Execute each command
+separately and stop at an error; starting services does not itself apply migrations.
+
 ```bash
 docker compose build app
 docker compose up -d --wait postgres
@@ -166,7 +185,8 @@ sh scripts/migrate.sh
 docker compose up -d --wait
 docker compose ps
 docker compose exec -T postgres sh /opt/gym-intel/role-psql.sh gym_intel_app -c 'SELECT version FROM public.schema_migrations ORDER BY version;'
-curl http://127.0.0.1:3000/api/health
+grafana_address="$(docker compose port grafana 3000)"
+curl --fail --silent --show-error "http://$grafana_address/api/health"
 ```
 
 Run this after generating all five secret files above. The role setup creates
@@ -191,27 +211,26 @@ app. Add explicit grants to `priv/database_roles.sql` when adding new tables.
 Expected evidence:
 
 - `docker compose ps` lists exactly three running services.
-- The read-only migration query lists versions `20260912000100`, `20260912000200`, `20260912000300`, `20261022000100`, and `20261022000200`; the corresponding files are the three original migrations, payment/renewal and VAT/admin extensions.
+- The read-only migration query lists six versions: `20260912000100`, `20260912000200`, `20260912000300`, `20261022000100`, `20261022000200`, `20261023000100`; the corresponding files are the three original migrations, payment/renewal, VAT/admin and observation-integrity extensions.
 - Grafana's health endpoint reports that its database is OK.
 
-Open Grafana at <http://127.0.0.1:3000>.
+Open Grafana at <http://127.0.0.1:3000> with the default host port. If overridden,
+use the address returned by `docker compose port grafana 3000`; the same applies
+to login, health and dashboard URLs in this reference.
 
 Use the read-only version query above for runtime verification. `mix ecto.migrations`
 also attempts migration-table DDL and is denied by the restricted runtime account;
 do not grant schema CREATE permission just to make that listing command succeed.
 Migration execution belongs in `scripts/migrate.sh` with the migrator credential.
 
-If a container reports that a mounted helper is missing after a Git checkout
-or pull, refresh the file mounts by recreating the containers:
-
-```bash
-docker compose up -d --force-recreate --wait
-```
-
-This preserves named volumes. During the dashboard-correctness work, configured
-helper mounts became unavailable after checkout; recreation restored them and
-the authenticated database health check. Application-code or migration changes
-still require the build and migration steps above.
+If a container reports a missing mounted helper after checkout/pull, identify the
+affected mount/service first. PostgreSQL's tracked helpers now use directory
+mounts; the older recreate-everything workaround is not a routine startup step.
+Individual secret files and Grafana's startup script still use file mounts.
+Agree a targeted recreation if required, preserving project/volume identity and
+following [maintenance boundaries](operator_runbook.md#6-maintenance-boundaries).
+Application-code or migration changes still need build/migration steps; a
+container recreation alone cannot fix an old application image.
 
 ## Connect Grafana to memberships
 
@@ -221,7 +240,8 @@ password and reload the provisioned data source later:
 ```bash
 docker compose exec -T postgres sh /opt/gym-intel/configure-roles.sh
 docker compose up -d --force-recreate grafana
-curl --fail http://127.0.0.1:3000/api/datasources/uid/gym-intel-memberships/health
+grafana_address="$(docker compose port grafana 3000)"
+curl --fail --silent --show-error "http://$grafana_address/api/datasources/uid/gym-intel-memberships/health"
 ```
 
 Expected: the health response reports a successful database connection. This is
@@ -362,7 +382,7 @@ Inspect job state (enqueueing is not proof of completion):
 
 ```bash
 docker compose exec -T postgres sh /opt/gym-intel/psql.sh -c \
-  "SELECT id, state, queue, attempt, completed_at, errors FROM oban_jobs ORDER BY id DESC LIMIT 5;"
+  "SELECT id, state, queue, attempt, completed_at, cardinality(errors) AS recorded_errors FROM oban_jobs WHERE queue = 'imports' ORDER BY id DESC LIMIT 5;"
 ```
 
 A header-only file completes without adding memberships. Valid nonempty imports

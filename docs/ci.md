@@ -1,9 +1,15 @@
-# Feature 3 — CI and manual review governance
+# CI and manual review governance
 
 Feature 6 extends the original source checks below with separate checks/runtime
 images and a final-image live-job smoke test. The job remains `CI checks (ARM64)`;
-manual review/merge policy is unchanged. No remote Feature 6 result is claimed
-until its PR runs on GitHub.
+manual review/merge policy is unchanged. Feature 6's latest
+[PR run](https://github.com/FSayedio/gym-intel-uae/actions/runs/39918378815)
+passed for `688fab5`; the
+[post-merge run](https://github.com/FSayedio/gym-intel-uae/actions/runs/39918887601)
+passed for `03cf1df`. Those are dated baseline results, not approval of later
+changes. See the [current handoff](reviewer_handoff.md) and
+[operator runbook](operator_runbook.md); earlier checkpoints are
+[archived](reviewer_history.md).
 
 ## Before, action, after
 

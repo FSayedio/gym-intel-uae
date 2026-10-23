@@ -78,6 +78,11 @@ the new append-only grants: it still expects UPDATE permission for its lock.
 
 ### Coordinated upgrade of a running older dashboard
 
+Historical transition for a pre-integrity schema, not a routine restart of the
+current stack. It was applied locally during Feature 5. Establish the
+[maintenance prerequisites](operator_runbook.md#6-maintenance-boundaries) before
+using this sequence on another older environment; it is not a restore recipe.
+
 1. Build and pass isolated tests. Confirm no pending/executing imports. Create a
    private logical backup; verify its archive, and capture original-field checksums.
 2. Stop only the app. Keep PostgreSQL and Grafana running. Apply the migration
