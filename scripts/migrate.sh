@@ -8,5 +8,5 @@ docker compose run --rm --no-deps \
   -e DATABASE_USER=gym_intel_migrator \
   -e DATABASE_PASSWORD_FILE=/run/secrets/postgres_migrator_password \
   -v "$project_dir/.secrets/postgres_migrator_password:/run/secrets/postgres_migrator_password:ro" \
-  app mix ecto.migrate
+  app bin/gym_intel eval 'GymIntel.Release.migrate()'
 docker compose exec -T postgres sh /opt/gym-intel/configure-roles.sh

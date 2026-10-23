@@ -20,6 +20,7 @@ jobs:
     timeout-minutes: 20
     env:
       CI_IMAGE: gym-intel-ci:${{ github.sha }}
+      RELEASE_IMAGE: gym-intel-runtime:${{ github.sha }}
     services:
       postgres:
         image: postgres:18.6-alpine
@@ -49,8 +50,13 @@ jobs:
       - name: Validate local Compose configuration
         run: docker compose config --quiet
 
-      - name: Build application image
-        run: docker build --tag "$CI_IMAGE" .
+      - name: Build separate checks and runtime images
+        run: |
+          docker build --target checks --tag "$CI_IMAGE" .
+          docker build --target runtime --tag "$RELEASE_IMAGE" .
+
+      - name: Verify Compose defaults and alternate host ports
+        run: CHECK_IMAGE="$CI_IMAGE" sh scripts/verify-compose.sh
 
       - name: Check formatting, compilation, fresh migrations and all tests
         shell: bash
@@ -73,3 +79,11 @@ jobs:
             --volume "$GITHUB_WORKSPACE/data:/app/data:ro" \
             --volume "$GITHUB_WORKSPACE/grafana:/app/grafana:ro" \
             "$CI_IMAGE" sh scripts/ci-checks.sh
+
+      - name: Verify final non-root runtime with isolated live jobs
+        env:
+          RELEASE_TEST_NETWORK: host
+          RELEASE_TEST_HOST: 127.0.0.1
+        run: |
+          export RELEASE_TEST_OWNER_PASSWORD_FILE="$RUNNER_TEMP/gym-intel-ci-database-password"
+          sh scripts/verify-release.sh

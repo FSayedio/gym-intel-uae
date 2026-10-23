@@ -1,5 +1,10 @@
 # Feature 3 — CI and manual review governance
 
+Feature 6 extends the original source checks below with separate checks/runtime
+images and a final-image live-job smoke test. The job remains `CI checks (ARM64)`;
+manual review/merge policy is unchanged. No remote Feature 6 result is claimed
+until its PR runs on GitHub.
+
 ## Before, action, after
 
 - **Before:** checks were run locally and reported in PR text, but GitHub did not
@@ -24,9 +29,13 @@ an obsolete run for the same PR.
 
 The workflow uses a read-only `contents` token and an exact checkout revision,
 with persisted Git credentials disabled. That token is not passed to the test
-container. The application image is built from the existing Dockerfile; this is
-not the later multi-stage/non-root release-image enhancement. Docker image tags
-still follow the existing project versions, not digest pins.
+container. The Dockerfile now has a tool-filled `checks` target and a non-root
+`runtime` target. Source checks run in the former; the live smoke check runs
+the latter. Builder/runtime bases are digest-pinned after the first Feature 6
+hosted run exposed differing cached/registry Alpine versions. Both now use
+Alpine 3.24.3, with the compatibility guard retained. PostgreSQL/Grafana tags,
+APK package resolution and build-tool downloads are not fully pinned, so this
+is not a claim of bit-for-bit reproducible builds or a vulnerability clearance.
 
 The PostgreSQL service belongs only to that GitHub job; its host port binds to
 loopback, not all interfaces. `ci-only-password` is a
@@ -64,6 +73,25 @@ not start the application supervisor or normal Oban imports queue. Database and
 dashboard SQL tests use synthetic sandbox data; no import into development is
 performed. The real CSV snapshots are read as test fixtures, not re-collected.
 
+After source checks, `scripts/verify-release.sh` creates a second, uniquely named
+test database and temporary migrator/runtime roles on that disposable service.
+It uses the actual runtime image to apply fresh migrations, start the supervised
+worker, enqueue a synthetic CSV twice, verify two completed jobs but one stored
+observation/note/fingerprint, and stop the worker gracefully. It also checks
+non-root execution, absent build CLIs, missing-credential failure and invalid
+input rejection. The runtime worker never receives the owner/migrator secret.
+The test cleans up only its own generated resources and fails if cleanup fails.
+This is independent of sandbox/unit tests; it is not a hosted Grafana/full-stack
+or fresh-machine reproduction test.
+
+`scripts/verify-compose.sh` checks the rendered model with default and alternate
+host ports. Both must retain localhost bindings, original internal ports, three
+ARM64 services, the runtime target, correct app secret and named-volume keys.
+It also requires the two read-only PostgreSQL directory mounts and matching
+authentication-config path, guarding against the stale individual-file binds
+observed during the local upgrade.
+It does not start/recreate containers or prove those host ports are available.
+
 ## Inspecting a result
 
 Open a PR's Checks section, select **CI checks (ARM64)**, then inspect the failed
@@ -77,12 +105,15 @@ and use the same shared check script through the test-only wrapper:
 ```sh
 docker compose build app
 sh scripts/test-database.sh --ci
+sh scripts/verify-compose.sh
+sh scripts/verify-release.sh
 ```
 
-This uses the existing local PostgreSQL service but only `gym_intel_test`, with
-owner credentials confined to the short-lived test task. It does not prove fresh
-migrations locally when that test database already exists; the hosted job uses
-a fresh PostgreSQL service every time. The original no-argument
+These checks use the existing local PostgreSQL service but only test databases,
+with owner credentials confined to short-lived checks/client tasks. Source tests
+may reuse `gym_intel_test`; the release smoke test always creates a fresh
+generated database. The hosted job uses a fresh PostgreSQL service every time.
+The original no-argument
 `sh scripts/test-database.sh` still runs migrations and tests as before.
 Do not point either script at development, rename the development DB, drop a
 volume, or expose local passwords to reproduce a CI run.
@@ -119,7 +150,7 @@ successful hosted PR run and the exact tested revision, review/merge, and local
 for unavailable enforcement, not a claim that enforcement was delivered.
 
 This does not add static analysis, coverage thresholds, visual browser automation,
-role-permission integration checks, full-stack startup, backup/restore, load tests,
+full-stack startup, backup/restore, load tests,
 or clean-machine reproduction. Those remain later roadmap items. Hosted checks
 can also fail due to registry access, runner availability, quotas or infrastructure;
 the logs must distinguish that from an application regression.

@@ -14,7 +14,8 @@ case "${1:-}" in
   *) echo "Usage: sh scripts/test-database.sh [--ci]" >&2; exit 2 ;;
 esac
 test -s .secrets/postgres_password
-docker compose run --rm --no-deps \
+docker compose -f compose.yaml -f compose.checks.yaml build app
+docker compose -f compose.yaml -f compose.checks.yaml run --rm --no-deps \
   -e MIX_ENV=test -e DATABASE_NAME=gym_intel_test -e RUN_DB_TESTS=true \
   -e DATABASE_USER=gym_intel \
   -e DATABASE_PASSWORD_FILE=/run/secrets/test_owner_password \

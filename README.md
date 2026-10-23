@@ -4,6 +4,8 @@ A local UAE gym analytics project built through practical learning.
 
 Working workflow: CSV -> Elixir + Oban -> PostgreSQL -> Grafana.
 Exactly three application services run locally using Docker Compose.
+The app uses a non-root packaged release; build/test tooling lives in a separate
+image target. Host ports are configurable without changing container endpoints.
 
 Gym facts must include a source and observation date.
 Missing information remains unknown.
