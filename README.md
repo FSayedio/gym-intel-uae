@@ -15,4 +15,5 @@ on the roadmap.
 - [Local setup, imports and tests](docs/local_development.md)
 - [Data contract and source limitations](docs/data_contract.md)
 - [CI checks and manual review policy](docs/ci.md)
+- [Observation identity and internal note history](docs/observation_integrity.md)
 - [Reviewer handoff](docs/reviewer_handoff.md)

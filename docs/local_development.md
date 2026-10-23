@@ -54,7 +54,7 @@ Each account has a distinct secret file, excluded from Git:
 | `gym_intel` | `postgres_password` | Bootstrap owner and maintenance; PostgreSQL container only |
 | `gym_intel_migrator` | `postgres_migrator_password` | Schema ownership and explicit migration tasks |
 | `gym_intel_app` | `postgres_app_password` | Running app, imports, and Oban |
-| `gym_intel_grafana` | `grafana_database_password` | SELECT on memberships |
+| `gym_intel_grafana` | `grafana_database_password` | SELECT on public dashboard view only |
 
 Elixir reads `DATABASE_PASSWORD_FILE` at startup. The running app receives only
 its runtime secret. `scripts/migrate.sh` mounts the migrator secret into a
@@ -162,7 +162,8 @@ connection. In Grafana, Connections > Data sources lists Gym Intel Memberships.
 
 The YAML uses `postgres:5432` because Grafana connects across the Compose network,
 not through the host port. The dedicated `gym_intel_grafana` login is granted only
-SELECT on memberships, not write access or access to Oban job contents. The setup
+SELECT on `dashboard_memberships`, not the underlying memberships, internal notes,
+import fingerprints or Oban job contents. The setup
 script also sets the reader's SCRAM password from its mounted secret. Anonymous
 visitors cannot create data sources. Administrators can configure connections,
 but PostgreSQL requires a valid password for the requested database role.
@@ -180,18 +181,19 @@ the actual role over SCRAM; it does not impersonate roles through a superuser
 session. It also verifies that owner/migrator secret files are absent from the
 running app.
 
-Runtime grants are deliberately explicit: SELECT/INSERT/UPDATE on memberships;
-SELECT/INSERT on import fingerprints; SELECT/INSERT/UPDATE/DELETE on Oban jobs
+Runtime grants are deliberately explicit: SELECT/INSERT on memberships, internal
+note versions and import fingerprints; SELECT/INSERT/UPDATE/DELETE on Oban jobs
 and peers; SELECT on migration versions; and access to the required sequences.
-UPDATE on memberships currently permits the importer's SHARE ROW EXCLUSIVE
-table lock. Remove that extra grant when the planned database uniqueness change
-replaces the lock. Runtime cannot delete memberships, change tables, create
+Database uniqueness replaces the importer's former whole-table lock, so runtime
+UPDATE on memberships is no longer needed or granted. Runtime cannot update or
+delete observations/note versions, change tables, create
 roles, modify migration versions, or assume the owner/migrator identity.
 
 The bootstrap owner remains a superuser in the PostgreSQL container for local
 maintenance. Anyone controlling Docker or reading the private owner secret can
 administer the database; these roles are not a boundary against the machine's
-owner. Grafana's reader cannot write memberships or read import/Oban payloads.
+owner. Grafana's reader cannot read the base memberships/notes tables, write
+the public view, or read import/Oban payloads.
 
 ## Membership dashboard
 
@@ -233,15 +235,18 @@ AED 89 joining and an unknown admin fee. The bars are not payable totals.
 The table repeats the graph's exact selection CTEs, eligibility and ordering;
 tests guard against drift for latest, unknown, conflicting and duplicate records.
 It is not the old all-history evidence table. Click a bar or a linked gym name
-for its official source and check date. Full original-plan/source notes remain
-in Inspect data; the table retains that metadata as hidden columns for links
-and inspection. Stored history is unchanged. Bars and table remain alphabetical,
+for its official source and check date. Original-plan and primary-source metadata
+remain in Inspect data; internal free-text notes and note history do not. The
+reader cannot access them through SQL either. Stored evidence remains internal.
+Bars and table remain alphabetical,
 not a cheapest or best-gym ranking. The visible warning discloses differing dates
 and terms and Warehouse's unresolved historical access scope.
 
-This presentation update needs no migration or app rebuild. Current CSVs still
-use the 17-column contract; historical 13-/15-column snapshots remain accepted.
-The schema, source-verification requirements and import behaviour are unchanged.
+The observation-integrity update requires its migration, role refresh and app
+rebuild. For an existing running dashboard, follow the coordinated upgrade in
+[Observation integrity](observation_integrity.md) before changing its queries.
+Current CSVs still use the 17-column contract; historical 13-/15-column snapshots
+remain accepted. Source-verification requirements are unchanged.
 See `docs/data_contract.md` for the current graph rules and source limitations.
 
 ## Queue a membership CSV
@@ -319,7 +324,9 @@ That script mounts owner credentials only in a temporary test container because
 the existing suite creates its database and changes constraints. It hardcodes
 `gym_intel_test`; development ownership and runtime grants are not changed.
 Database tests refuse any other database name. Synthetic rows and test jobs use
-sandbox transactions and are rolled back after each test. The test database and
+sandbox transactions and are rolled back after each test. The concurrency tests
+need independent committed connections; they use uniquely named synthetic rows
+and explicit scoped cleanup, still only in `gym_intel_test`. The test database and
 its migrated tables remain for later runs. Tests cover validation, CSV parsing,
 atomic saves, duplicate handling, enqueueing, and worker execution through Oban's
 test helper. Dashboard regression tests execute the actual graph/table SQL loaded

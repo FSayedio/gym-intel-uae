@@ -14,6 +14,8 @@ defmodule GymIntel.Membership do
   @months_pattern ~r/\A-?[0-9]{1,10}\z/
 
   schema "memberships" do
+    field(:observation_key, :binary, read_after_writes: true)
+    field(:first_import_sha256, :string)
     field(:brand_name, :string)
     field(:branch_name, :string)
     field(:plan_name, :string)
@@ -36,6 +38,7 @@ defmodule GymIntel.Membership do
   end
 
   def source_fields, do: @fields
+  def identity_fields, do: @fields -- [:notes]
 
   def changeset(membership, attrs, opts \\ []) do
     {safe_attrs, input_errors} = check_raw_attrs(attrs)

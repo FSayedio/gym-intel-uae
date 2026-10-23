@@ -1,5 +1,52 @@
 # Pricing MVP — reviewer handoff
 
+## Latest integrity checkpoint — 23 October 2026
+
+Feature 5 is implemented on `codex/observation-integrity`, based on main at
+`d1cadba3dba4f7acb95b5c7b9ef53704327dbe80`. At this checkpoint the work is
+unstaged/uncommitted: no Feature 5 push, PR, GitHub CI result or merge is claimed.
+The local development migration and permission refresh have been applied.
+The earlier checkpoints below remain historical; current identity/permissions
+and internal-note handling are defined by this section and
+[Observation integrity](observation_integrity.md).
+
+- **Before:** importer-only duplicate checks used a whole-table write lock;
+  note corrections created extra observations, and raw notes could reach
+  Grafana's Inspect results through its base-table reader permission.
+- **Action:** generate and uniquely index a key over the 16 non-note source
+  fields in PostgreSQL; keep internal note versions; use conflict-aware inserts
+  without the blanket lock; restrict Grafana to a public-fields view; remove
+  runtime UPDATE/DELETE on observations, note versions and file markers.
+- **After:** a note-only correction preserves observation ID and original text,
+  appends one version, and returns `inserted: 0, skipped: 1, notes_added: 1`.
+  A changed price/date/source remains a distinct observation. No new gym facts,
+  public filters, receipt UI or comparison claims were added.
+- **Evidence:** `sh scripts/test-database.sh --ci` passed **118 tests**, seed
+  `538716`, including migration preservation/collision rollback, actual typed
+  equality, simulated observation/note hash collisions, permission profiles,
+  and independent-connection concurrency checks. The app image built with
+  warnings-as-errors. Git's tracked-change whitespace check passed.
+- **Local upgrade evidence:** no pending imports before stopping the app; a
+  private logical backup was created outside the repository and its archive
+  list read successfully (a full restore drill was not performed). Migration
+  `20261023000100` completed as the migrator. Checksums of all original source
+  fields, IDs, timestamps and import markers were identical before/after;
+  six rows/four brands remained, with six unique keys and six exactly copied
+  initial notes. Unknown historical import provenance was not invented.
+- **Public access evidence:** Grafana loaded both queries against the new view;
+  its data-source API returned four rows in both panels and graph prices
+  **209 / 1,500 / 199 / 363**, with no raw-note/key/import columns. The real
+  SCRAM-authenticated role probe passed: runtime edits/deletes and schema/owner
+  access denied; reader base/history/import/job reads denied; public view read
+  allowed; migrator temporary DDL rolled back. Running app has no owner or
+  migrator credential mounted. No visual layout change was intended or claimed
+  independently screenshot-verified in this checkpoint.
+- **Limits:** automatic migration down refuses to drop note history. A forward
+  fix or explicitly reviewed recovery is required after deployment. Owners
+  remain privileged; keys do not validate official-source truth. The existing
+  locked Decimal 3.1.1 advisory (EEF-CVE-2026-97853 / GHSA-6c27-994x-c52f) and
+  upstream Ecto xref deprecation warning remain unresolved by this feature.
+
 ## Current display update — 22 October 2026
 
 The dashboard is now a single vertical advertised-monthly-charge graph, with
@@ -73,7 +120,8 @@ Use [Local development](local_development.md) for exact commands. In order:
 
 1. Generate local secrets, build the app, start PostgreSQL, configure roles,
    and run `sh scripts/migrate.sh`, then start the full three-service stack.
-2. Role setup grants the dedicated Grafana login SELECT on memberships.
+2. Role setup grants the dedicated Grafana login SELECT on `dashboard_memberships`,
+   not internal base tables or note history.
    Run `sh scripts/verify-permissions.sh` for the role-isolation checks.
 3. Queue `data/memberships.csv`, then `data/memberships-2026-10-22.csv`, using
    the documented enqueue command with each path. Inspect Oban job state until
@@ -115,14 +163,17 @@ Paths abbreviated in the table share their row's stated directory.
   branches/plans? Confirm unresolved commitment, joining fee, tax, and offer terms.
 - Do validation and migration constraints agree, including unknown versus zero?
 - Are malformed files rejected without partial writes? Check atomicity, retries,
-  identical-file detection, and equality across all 17 fields for row duplicates.
+  identical-file detection, database uniqueness across the 16 non-note source
+  fields, and append-only note versions for note-only changes.
   The extensions accept the exact legacy 13- and 15-column snapshot
   formats as well as the current 17-column header; old missing classifications
   stay unknown. New classifications are nullable, allowlisted independently in
   Elixir and PostgreSQL, and matched by the filtered dashboard SQL. Review both
   legacy queued-job compatibility and differing/unknown/conflicting term cases.
-- Are changed observations retained correctly? Notes/source changes are distinct
-  observations, not semantic duplicates under the current rule.
+- Are changed observations retained correctly? Changed sources are distinct
+  observations; note-only changes preserve observation ID and append internal
+  versions without losing original text. Review the migration's collision stop,
+  privilege boundary, and refusal to automatically drop note history.
 - Does the dashboard avoid misleading comparisons? The chart selects the newest
   date with known monthly single-branch prices for every explicitly selected
   branch/plan, preserving the prior complete set during partial refreshes.

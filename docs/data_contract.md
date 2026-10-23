@@ -160,9 +160,11 @@ Adding the compact table does not alter the graph's price query or selection.
 - Bars are alphabetical, not a cheapest-gym or best-value ranking.
 - Click a bar to read its source-check date and terms (commitment, joining fee,
   admin fee, VAT, payment and renewal) and open the official source. Linked gym
-  names in the table also expose the source and check date. Full source notes,
-  original plan and supporting URLs remain in query results via Inspect data;
-  evidence columns are retained but hidden in the compact table. There are no
+  names in the table also expose the source and check date. The original plan
+  and primary source URLs remain in Inspect data. Raw notes and note history
+  are internal only: neither is returned by the queries or accessible to the
+  Grafana database reader. Public source metadata is retained but hidden in the
+  compact table. There are no
   separate checked/source or key-caveat columns.
 - Multiple offers for the same brand have branch and original plan appended to
   their labels; marketing names are never converted into invented equal tiers.
@@ -197,18 +199,24 @@ comparison needs enough genuinely comparable data before controls are added.
 - Source URLs must retain the existing HTTP/HTTPS scheme and nonempty-host checks and must not contain embedded credentials. Syntax validation does **not** prove a source is official, reachable or current. Official-source verification remains manual; no network requests or scraping are added.
 - The enqueue function validates the bounded CSV before storing its raw contents in an Oban job. Invalid files return errors without creating a job. The worker validates again at execution; invalid legacy/directly inserted jobs are cancelled, not imported. Direct callers of Oban can bypass the enqueue function, so this is not a guarantee that all existing job arguments are credential-free or redacted.
 - Row errors identify the CSV record (header is record 1) and field. No rejected batch writes memberships or a fingerprint, even if earlier rows were valid. Completely empty files still report a missing header; header-only snapshots remain valid no-ops.
-- Parsing tolerates export formatting without changing the queued snapshot or the raw-byte fingerprint. The same observations in a BOM/CRLF export therefore have a different file fingerprint but are skipped by the existing parsed-row duplicate check. Observation identity, notes-in-identity and database uniqueness are unchanged and belong to the next feature.
+- Parsing tolerates export formatting without changing the queued snapshot or the raw-byte fingerprint. The same observations in a BOM/CRLF export therefore have a different file fingerprint but match the database observation key described below.
 - These application checks do not retrofit database constraints or repair historical records, and do not resolve the separately documented Decimal dependency advisory. Tests use a fixed reference day for date boundaries and the isolated test database for no-partial-write evidence.
 
 ## Duplicate observations during import
 
 - An identical file is skipped using its content fingerprint.
-- For different files, an observation is skipped only when all 17 parsed source fields match an existing membership. This also catches repeated rows within a file. Legacy missing fields match new blank fields; adding or changing a supported payment, renewal, VAT or admin-fee fact creates a distinct observation rather than overwriting history.
+- For different files, identity is the 16 parsed source fields other than `notes`. This also catches repeated rows within a file. Legacy missing fields match new blank fields; adding or changing a supported payment, renewal, VAT or admin-fee fact creates a distinct observation rather than overwriting history.
 - Parsed numeric equivalents such as `100` and `100.00` match. Unknown values remain distinct from zero.
-- Different dates, prices, scope, notes, or other source fields are retained as separate observations. This is not fuzzy matching or automatic correction of older observations.
-- Each import reports inserted and skipped row counts. The file-tracking row count describes input rows, including skipped duplicates.
-- For the small MVP, imports serialize membership writes within a transaction while checking and inserting. This can delay other writes; it is not a high-volume design or a database-wide uniqueness rule for code that bypasses the importer.
-- Existing duplicates are not deleted by this import rule.
+- Different dates, prices, scope or other identity fields remain separate observations. A note-only change instead appends an internal note version to the same observation; repeated identical text adds nothing. Blank notes do not erase history. Original `memberships.notes` remains the initial text, not a mutable latest-note field.
+- PostgreSQL generates a versioned SHA-256 observation key from typed fields and enforces a unique index. Callers cannot supply a generated key. Nulls, field boundaries and numeric equivalents are handled explicitly; no fuzzy matching, URL rewriting or plan-name normalization occurs. The importer verifies the actual fields on a conflict rather than trusting hash equality alone.
+- Each new-file import returns `inserted`, `skipped` and `notes_added`. For example, a note correction returns `%{inserted: 0, skipped: 1, notes_added: 1}`. Skipped counts matched input rows, even when a new note version is added. These return values are not a persisted Oban result report. File tracking counts input rows, including skipped duplicates.
+- Observations, note versions and the file fingerprint commit in one transaction. A failed import adds none of them. The importer no longer takes a whole-table write lock; unique-index conflicts can still wait for a concurrent transaction. Both observation and note keys use a consistent insertion order.
+- The upgrade preserves original IDs, fields, notes and timestamps, and copies existing notes into history. Historical file provenance remains unknown rather than guessed. Pre-existing identity collisions stop the migration without silently deleting or consolidating records. Automatic down is refused because it would discard note history; use a reviewed forward fix.
+- Runtime grants permit SELECT/INSERT but not UPDATE/DELETE on observations, notes and file markers. Grafana can SELECT only `dashboard_memberships`, a projection without notes or import metadata. Administrative owners/migrators remain privileged and can bypass these runtime restrictions.
+
+See [Observation integrity](observation_integrity.md) for the implementation,
+upgrade sequence and verification boundaries. A key establishes identity, not
+source authenticity or factual accuracy.
 
 ## Official-source spot check — 12 September 2026
 
