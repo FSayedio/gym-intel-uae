@@ -70,10 +70,13 @@ not cluster-deployment acceptance evidence.
 
 [Local database backup and verified restore](database_recovery.md) is the first
 focused feature after the seven-item milestone. It adds on-demand whole-database
-capture, a brief app pause/resume, an isolated restore rehearsal, and seven-copy
-retention. Its associated PR/CI/review/merge establishes delivery. Off-device
+capture, a brief app pause/resume and an isolated restore rehearsal. It originally
+kept seven copies; the [update lifecycle](update_lifecycle.md) changes that to two
+verified backups, current-only observation cleanup and two finished import jobs.
+Its associated PR/CI/review/merge establishes delivery; documentation alone is
+not proof. Off-device
 storage, scheduling, actual restore-to-live procedures, Grafana/credential
-recovery, job pruning and monitoring remain separate work; this is not completion
+recovery, broader time-based job policies and monitoring remain separate work; this is not completion
 of the operational-recovery/visibility milestone.
 
 ## Kubernetes is a later deployment milestone
@@ -109,8 +112,8 @@ earlier in-chat roadmap estimate or a claimed verbatim two-bucket classification
 
 | Area / review reference | Why missed or deferred in the first slice | Incorporation path and current boundary |
 | --- | --- | --- |
-| Backup, retention and restore; review's untested recovery | First MVP proved import/display, not the data lifecycle. Upgrade archive checks did not test restoration. | The [recovery feature](database_recovery.md) adds manual private PostgreSQL capture, isolated restore verification and seven-copy retention. Off-device protection, scheduling and reviewed live-recovery/Grafana/credential procedures remain open. |
-| Job retention (m2), diagnostics, observability | Durable snapshots solved mutable-file retries, not long-term privacy/storage/operations. | Agree pruning, redacted errors/logs, metrics and alerts; test expiry without losing required evidence. No scheduled pruning/monitoring. Keep receipts internal unless a real user need emerges. |
+| Backup, retention and restore; review's untested recovery | First MVP proved import/display, not the data lifecycle. Upgrade archive checks did not test restoration. | The [recovery feature](database_recovery.md) and [update lifecycle](update_lifecycle.md) provide verified capture/two-copy retention. Off-device protection, scheduling and reviewed live-recovery/Grafana/credential procedures remain open. |
+| Job retention (m2), diagnostics, observability | Durable snapshots solved mutable-file retries, not long-term privacy/storage/operations. | The [update lifecycle](update_lifecycle.md) keeps two finished import jobs after a verified backup and protects unfinished work. This is count-based cleanup, not a time-based privacy guarantee. Broader redaction, metrics and alerts remain open. |
 | Performance/indexes (M4, m3) | Correctness for bounded small CSVs preceded measurement. Removing the blanket lock did not eliminate query cost. | Benchmark realistic loads and explain plans before batching/index changes. Uniqueness tests do not prove throughput or multi-app readiness. |
 | Domain normalization, IDs, named branches (m6, m8, m16) | Flat sourced observations kept the pipeline small; canonical entities/UUID redesign was not required to prove it. | Define identifiers and branch-list semantics, then justify a compatible migration. Preserve source text/history; no inferred marketing-tier equivalence or blanket ID rewrite. |
 | Provenance (m7) | Early file markers lacked a row link. | Feature 5 links new observations/notes to markers; old unknown provenance stays unknown. Every-occurrence/actor audit history remains unimplemented. |

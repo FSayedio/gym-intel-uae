@@ -84,13 +84,32 @@ defmodule GymIntel.RecoveryScriptsTest do
     end
   end
 
-  test "retention preserves seven latest verified bundles", %{directory: directory} do
+  test "retention preserves two latest verified bundles", %{directory: directory} do
     root = root(directory)
-    bundles = for number <- 0..7, do: bundle(root, number)
+    bundles = for number <- 0..2, do: bundle(root, number)
     {_message, 0} = policy(root)
     refute File.exists?(hd(bundles))
     assert Enum.all?(tl(bundles), &File.dir?/1)
     assert File.exists?(Path.join(root, ".gym-intel-backups-v1"))
+  end
+
+  test "standalone capture cannot bypass an update lock", %{directory: directory} do
+    root = root(directory)
+    lock = Path.join(root, ".update.lock")
+    File.mkdir!(lock)
+    File.chmod!(lock, 0o700)
+    private_file(Path.join(lock, "token"), "TEST PRIVATE COORDINATION TOKEN")
+
+    {message, status} =
+      System.cmd("sh", ["scripts/backup-database.sh", "--directory", root],
+        stderr_to_stdout: true,
+        env: [{"GYM_INTEL_UPDATE_TOKEN", ""}]
+      )
+
+    assert status != 0
+    assert message =~ "update lock exists"
+    assert File.dir?(lock)
+    refute File.exists?(Path.join(root, ".backup.lock"))
   end
 
   test "tampering stops retention before any deletion", %{directory: directory} do

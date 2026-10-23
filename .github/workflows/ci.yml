@@ -88,5 +88,5 @@ jobs:
           export RELEASE_TEST_OWNER_PASSWORD_FILE="$RUNNER_TEMP/gym-intel-ci-database-password"
           sh scripts/verify-release.sh
 
-      - name: Verify database backup and isolated restore using synthetic data
+      - name: Verify backup recovery and rolling-two dashboard updates with synthetic data
         run: sh scripts/verify-recovery.sh

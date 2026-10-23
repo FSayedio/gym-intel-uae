@@ -62,6 +62,7 @@ defmodule GymIntel.DashboardQueriesDatabaseTest do
     assert panel()["options"]["xField"] == "Category"
     assert dashboard()["templating"]["list"] == []
     assert dashboard()["timepicker"]["hidden"]
+    assert dashboard()["refresh"] == "30s"
 
     assert conditions_panel()["gridPos"]["y"] ==
              panel()["gridPos"]["y"] + panel()["gridPos"]["h"]

@@ -23,6 +23,7 @@ operational recovery and eventual Kubernetes deployment remain on the
 
 - [Operator runbook: setup, import, verify, diagnose and stop](docs/operator_runbook.md)
 - [Database backup, isolated restore verification and retention](docs/database_recovery.md)
+- [One-command dashboard update and rolling-two lifecycle](docs/update_lifecycle.md)
 - [Detailed local configuration and credentials](docs/local_development.md)
 - [Data contract and source limitations](docs/data_contract.md)
 - [CI checks and manual review policy](docs/ci.md)
@@ -37,7 +38,7 @@ with `docker compose up -d --wait`. The default dashboard is
 with `docker compose port grafana 3000`. Starting services does not migrate or
 import automatically.
 
-With the two checked-in CSV snapshots imported: six historical observations,
+With both checked-in snapshots imported before lifecycle cleanup: six observations,
 four brands, one vertical advertised-charge graph and a compact conditions table.
 There are no filters. Dates and terms differ; Warehouse's historical access scope
 is unresolved. These are not equivalent memberships, live quotes or all-in costs.

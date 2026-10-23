@@ -10,6 +10,9 @@ fixture_temp_base=${TMPDIR:-/tmp}
 fixture_temp_base=${fixture_temp_base%/}
 fixture_tmp=$(mktemp -d "$fixture_temp_base/gym-intel-recovery-test.XXXXXX")
 fixture_project="gym-intel-recovery-test-$(date +%s)-$$"
+export RECOVERY_FIXTURE_DATA_DIR="$fixture_tmp/data"
+mkdir "$RECOVERY_FIXTURE_DATA_DIR"
+chmod 755 "$RECOVERY_FIXTURE_DATA_DIR"
 fixture_compose() {
   RECOVERY_FIXTURE_PASSWORD_FILE="$fixture_tmp/password" \
   RECOVERY_FIXTURE_PROJECT="$fixture_project" \
@@ -105,3 +108,59 @@ test "$(docker inspect --format '{{.State.Running}}' "$fixture_app")" = true
 bundle=$fixture_backup
 recovery_check_verified
 printf 'PASS: synthetic full-database capture/restore, live app resume, corrupt rejection, role checks and good-backup preservation\n'
+
+echo 'Checking three complete dashboard updates with the real worker and verified backups'
+fixture_update_command() {
+  COMPOSE_FILE="$project_dir/scripts/recovery/fixture.compose.yaml" \
+  COMPOSE_PROJECT_NAME="$fixture_project" \
+  RECOVERY_FIXTURE_PASSWORD_FILE="$fixture_tmp/password" \
+  RECOVERY_FIXTURE_PROJECT="$fixture_project" \
+  sh scripts/update-dashboard.sh data/memberships.csv --directory "$fixture_tmp/backups"
+}
+# The host path must exist, while the disposable service mounts only synthetic
+# fixture input at that same container path. No real CSV is submitted here.
+fixture_header='brand_name,branch_name,plan_name,access_scope,offer_type,advertised_price_aed,billing_period_months,minimum_commitment_months,joining_fee_aed,source_url,source_published_on,observed_on,notes,payment_structure,renewal_policy,price_vat_status,admin_fee_aed'
+for fixture_day in 1 2 3; do
+  printf '%s\nTEST ONLY LIFECYCLE,TEST BRANCH,TEST PLAN,single_branch,standard,%s,1,0,0,https://example.com/lifecycle,,2000-01-0%s,TEST ONLY,,,,\n' \
+    "$fixture_header" "$((190 + fixture_day))" "$fixture_day" > "$RECOVERY_FIXTURE_DATA_DIR/memberships.csv"
+  chmod 644 "$RECOVERY_FIXTURE_DATA_DIR/memberships.csv"
+  fixture_update_command
+  test "$(fixture_compose exec -T postgres sh /opt/gym-intel/psql.sh -qAtc \
+    "SELECT count(*) FROM memberships WHERE brand_name='TEST ONLY LIFECYCLE'")" = 1
+done
+test "$(fixture_compose exec -T postgres sh /opt/gym-intel/psql.sh -qAtc \
+  "SELECT advertised_price_aed::integer FROM memberships WHERE brand_name='TEST ONLY LIFECYCLE'")" = 193
+test "$(fixture_compose exec -T postgres sh /opt/gym-intel/psql.sh -qAtc \
+  "SELECT count(*) FROM oban_jobs WHERE queue='imports' AND worker='GymIntel.Workers.ImportMemberships'")" = 2
+fixture_count=0
+for fixture_candidate in "$fixture_tmp/backups"/backup-*; do
+  test -d "$fixture_candidate"
+  fixture_count=$((fixture_count + 1))
+done
+test "$fixture_count" = 2
+test ! -e "$fixture_backup"
+
+echo 'Checking a failed backup prevents observation and job cleanup'
+fixture_compose exec -T postgres sh /opt/gym-intel/psql.sh \
+  -c 'GRANT UPDATE ON public.memberships TO gym_intel_app' >> "$fixture_tmp/fixture.log" 2>&1
+printf '%s\nTEST ONLY LIFECYCLE,TEST BRANCH,TEST PLAN,single_branch,standard,194,1,0,0,https://example.com/lifecycle,,2000-01-04,TEST ONLY,,,,\n' \
+  "$fixture_header" > "$RECOVERY_FIXTURE_DATA_DIR/memberships.csv"
+chmod 644 "$RECOVERY_FIXTURE_DATA_DIR/memberships.csv"
+if fixture_update_command > "$fixture_tmp/failed-update.log" 2>&1; then
+  recovery_fail 'Unsafe backup allowed lifecycle success'; exit 1
+fi
+grep -q 'backup-verification' "$fixture_tmp/failed-update.log"
+test "$(fixture_compose exec -T postgres sh /opt/gym-intel/psql.sh -qAtc \
+  "SELECT count(*) FROM memberships WHERE brand_name='TEST ONLY LIFECYCLE'")" = 2
+test "$(fixture_compose exec -T postgres sh /opt/gym-intel/psql.sh -qAtc \
+  "SELECT count(*) FROM oban_jobs WHERE queue='imports' AND worker='GymIntel.Workers.ImportMemberships'")" = 3
+fixture_compose exec -T postgres sh /opt/gym-intel/psql.sh \
+  -c 'REVOKE UPDATE ON public.memberships FROM gym_intel_app' >> "$fixture_tmp/fixture.log" 2>&1
+# Retry identical bytes: no duplicate observations, but a fresh verified backup
+# permits the previously withheld cleanup to complete safely.
+fixture_update_command
+test "$(fixture_compose exec -T postgres sh /opt/gym-intel/psql.sh -qAtc \
+  "SELECT count(*) FROM memberships WHERE brand_name='TEST ONLY LIFECYCLE'")" = 1
+test "$(fixture_compose exec -T postgres sh /opt/gym-intel/psql.sh -qAtc \
+  "SELECT count(*) FROM oban_jobs WHERE queue='imports' AND worker='GymIntel.Workers.ImportMemberships'")" = 2
+printf 'PASS: rolling-two verified backups/jobs, current-only observations, failed-backup protection and duplicate retry\n'

@@ -110,7 +110,7 @@ recovery_prune() {
     }
   fi
   recovery_count=$(printf '%s' "$recovery_names" | sed '/^$/d' | wc -l | tr -d ' ')
-  recovery_remove=$((recovery_count - 7))
+  recovery_remove=$((recovery_count - 2))
   [ "$recovery_remove" -gt 0 ] || return 0
   # Names above are strictly ASCII identifiers, so this controlled word split
   # cannot turn a pathname with spaces/newlines into a different target.

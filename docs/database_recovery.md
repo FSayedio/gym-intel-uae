@@ -4,7 +4,7 @@
 
 Before: the database lived in its Docker volume; earlier upgrade archives were
 only list-checked. After: an on-demand command captures a private logical backup,
-restores it into isolation, verifies it, and keeps the latest seven verified copies.
+restores it into isolation, verifies it, and keeps the latest two verified copies.
 This is a local recovery rehearsal—not a restore-to-live command, off-device
 disaster recovery, continuous archiving or a production backup service.
 
@@ -14,7 +14,7 @@ disaster recovery, continuous archiving or a production backup service.
 | PostgreSQL `pg_dump` | Whole single-database custom-format archive: schema, rows, sequences, object ownership and grants |
 | [snapshot.sql](../scripts/recovery/snapshot.sql) | Deterministic private comparison: full-row hashes, schema/grants, migrations and sequence states |
 | [verify-database-backup.sh](../scripts/verify-database-backup.sh) | Isolated restore, full comparison, real permission denials and transactional identity/note probes |
-| [common.sh](../scripts/recovery/common.sh) | Managed-path/privacy/checksum checks and fail-closed seven-copy retention |
+| [common.sh](../scripts/recovery/common.sh) | Managed-path/privacy/checksum checks and fail-closed two-copy retention |
 | [verify-recovery.sh](../scripts/verify-recovery.sh) | Disposable synthetic source/restore integration test; never development data |
 
 The archive covers memberships, internal note history, file markers, migration
@@ -31,6 +31,12 @@ schemas require an explicitly reviewed extension, not a silent partial-success
 claim. Recovering actual credentials and a whole machine remains separate work.
 
 ## Create and verify a backup
+
+Normal data updates now invoke this through the explicit
+[update lifecycle](update_lifecycle.md), followed by guarded current-data/job
+cleanup. Standalone capture below remains supported and does not delete live
+observations/jobs itself. Both paths share the two-verified-copy limit. Do not
+run standalone capture/verification or low-level imports concurrently with updates.
 
 Run from the repository root with Docker Desktop and the current stack available.
 OpenSSL is required on the host (also used by the existing secret-generation
@@ -86,14 +92,14 @@ The command performs these steps, stopping on failure:
    No worker starts, so restored jobs cannot execute.
 9. Remove the exact labelled temporary container and generated credentials. Only
    after verification and cleanup succeed, write the verification marker and
-   publish a timestamped `backup-...` directory. Then apply seven-copy retention.
+   publish a timestamped `backup-...` directory. Then apply two-copy retention.
 
 Expected final output includes:
 
 ```text
 PASS: complete restored baseline, actual role denials, identity/initial-note probes; no worker started
 PASS: verified database backup: .../backups/backup-<UTC timestamp>-<suffix>
-Retention: latest seven verified backups; local-only, not separately encrypted.
+Retention: latest two verified backups; local-only, not separately encrypted.
 ```
 
 Check the command's final exit status, not a partial PASS line before a later
@@ -118,9 +124,9 @@ cache/machine loss is not solved by this local-only feature.
 
 ## Retention and failure behaviour
 
-- Keep the latest **seven verified backups**, not seven days. Run frequency is
-  manual; data protection is only as recent as the last successful capture.
-- Backup #8 must restore successfully before the oldest verified copy is removed.
+- Keep the latest **two verified backups**, not two days. Captures are explicit
+  (standalone or during updates); protection is as recent as the last success.
+- Backup #3 must restore successfully before the oldest verified copy is removed.
   Validate all candidates first. Unexpected files, symlinks, insecure permissions,
   mismatched checksums or verification markers stop retention before deletion.
   A backwards timestamp/order also stops deletion rather than pruning the copy
@@ -176,7 +182,7 @@ and [pg_restore](https://www.postgresql.org/docs/18/app-pgrestore.html).
 - The final shared source/DB suite passed **135 tests**, seed `639705`.
 - The synthetic end-to-end recovery rehearsal passed, including a valid restore,
   both corrupt-archive cases, weaker-role rejection, app resume and preservation
-  of the prior good backup. Unit tests separately exercise eight-to-seven
+  of the prior good backup. Unit tests separately exercise three-to-two
   retention, tampering, unknown files/symlinks, private modes, stale locks,
   backwards timestamps, unfinished jobs, capture/restart failures and an initially
   stopped app. The SQL regression preserves differing constraint semantics.
