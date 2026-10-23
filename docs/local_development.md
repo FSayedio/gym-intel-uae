@@ -14,8 +14,8 @@ The default app image is a packaged Elixir release, `gym-intel-runtime:local`,
 running as UID/GID `10001`. It bundles the Erlang runtime and required libraries,
 but not the Mix/Hex/Rebar build tools or full application source tree. Migrations
 and their SQL resources remain packaged under the application's `priv` directory.
-The matching Alpine runtime is built separately from the tool-filled `checks`
-target. Local app images are built locally, not pulled from or published to a
+The digest-pinned matching Alpine 3.24.3 runtime is built separately from the
+tool-filled `checks` target. Local app images are built locally, not pulled from or published to a
 registry. Changing code requires rebuilding; there is no live source-code mount.
 App shutdown allows 20 seconds to cover Oban's 15-second grace period. Erlang
 distribution is disabled; operators use short-lived `eval` helpers, not remote

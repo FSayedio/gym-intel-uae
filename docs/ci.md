@@ -31,7 +31,10 @@ The workflow uses a read-only `contents` token and an exact checkout revision,
 with persisted Git credentials disabled. That token is not passed to the test
 container. The Dockerfile now has a tool-filled `checks` target and a non-root
 `runtime` target. Source checks run in the former; the live smoke check runs
-the latter. Image tags still follow project versions, not digest pins, so this
+the latter. Builder/runtime bases are digest-pinned after the first Feature 6
+hosted run exposed differing cached/registry Alpine versions. Both now use
+Alpine 3.24.3, with the compatibility guard retained. PostgreSQL/Grafana tags,
+APK package resolution and build-tool downloads are not fully pinned, so this
 is not a claim of bit-for-bit reproducible builds or a vulnerability clearance.
 
 The PostgreSQL service belongs only to that GitHub job; its host port binds to

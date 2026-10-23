@@ -50,11 +50,23 @@ result or merge is claimed yet. Inspect Git/GitHub for later delivery status.
 - **Limits:** ARM64 Docker only, not Kubernetes, x86, registry publication,
   universal fresh-machine reproduction or full hosted Grafana/visual testing.
   A small runtime/non-root account is not a vulnerability clearance or protection
-  against Docker's administrator. Base/package tags are not fully digest-pinned.
+  against Docker's administrator. Builder/runtime bases are digest-pinned;
+  PostgreSQL/Grafana tags, APK resolution and build tools are not fully pinned.
   The Decimal advisory and upstream Ecto deprecation warning remain. Backup
   restore and in-flight power-loss/load scenarios were not tested here. Failed
   or interrupted cleanup may require scoped operator attention; never substitute
   broad database/volume deletion. Credential mounts remain individual files.
+
+### Hosted-build finding and follow-up
+
+The initial PR #14 run for `7eb88ec` failed before tests in the Alpine guard:
+GitHub resolved the mutable Elixir tag to a builder with Alpine 3.24.3, while
+the local cached builder had 3.24.1. This was not waived or bypassed. The follow-up
+pins registry-verified builder/runtime digests to the matching 3.24.3 pair and
+retains the version check. Application dependency locks are unchanged. A new
+latest-revision hosted run must pass; the older failed run remains reviewable.
+The pinned pair rebuilt locally and the isolated source suite again passed
+121 tests, seed `923929`; this follow-up is not a claim that hosted CI passed.
 
 ## Latest integrity checkpoint — 23 October 2026
 

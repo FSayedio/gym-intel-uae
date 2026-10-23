@@ -1,4 +1,4 @@
-FROM elixir:1.20.4-otp-29-alpine AS source
+FROM elixir:1.20.4-otp-29-alpine@sha256:f95251968625b0b61716355b372b58b1916bb618b949de3d2e62fb803ad68784 AS source
 
 ENV MIX_ENV=prod
 
@@ -25,11 +25,11 @@ RUN mix deps.get --check-locked && mix compile --warnings-as-errors
 CMD ["sh", "scripts/ci-checks.sh"]
 
 FROM source AS builder
-RUN test "$(cat /etc/alpine-release)" = 3.24.1 \
+RUN cat /etc/alpine-release && test "$(cat /etc/alpine-release)" = 3.24.3 \
     && mix compile --warnings-as-errors && mix release gym_intel
 
 # Match the builder's musl/Alpine runtime, without shipping Mix/Hex/Rebar.
-FROM alpine:3.24.1 AS runtime
+FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS runtime
 RUN apk add --no-cache libstdc++ ncurses-libs libcrypto3 libssl3 liblksctp ca-certificates \
     && addgroup -S -g 10001 gym_intel \
     && adduser -S -D -H -u 10001 -G gym_intel gym_intel
