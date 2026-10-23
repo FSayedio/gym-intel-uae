@@ -112,7 +112,7 @@ defmodule GymIntel.MembershipImporterDatabaseTest do
     before = counts()
     contents = csv(["TEST FIRST", "TEST REJECT"])
 
-    assert_raise Ecto.ConstraintError, fn ->
+    assert_raise Postgrex.Error, fn ->
       MembershipImporter.import_csv(contents)
     end
 
@@ -150,7 +150,7 @@ defmodule GymIntel.MembershipImporterDatabaseTest do
     assert {:ok, {:imported, %{inserted: 0, skipped: 1}}} = MembershipImporter.import_csv(changed)
   end
 
-  test "changed source fields remain separate observations" do
+  test "changed identity source fields remain separate observations" do
     contents = csv(["TEST HISTORY"])
 
     assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
@@ -160,7 +160,6 @@ defmodule GymIntel.MembershipImporterDatabaseTest do
           String.replace(contents, "2026-09-12", "2026-09-13"),
           String.replace(contents, ",100,1,", ",120,1,"),
           String.replace(contents, "all_uae_branches", "multiple_named_branches"),
-          String.replace(contents, ",TEST ONLY", ",TEST UPDATED NOTE"),
           String.replace(contents, "https://example.com", "https://example.com/new-source"),
           String.replace(contents, ",100,1,,,", ",100,1,,0,")
         ] do

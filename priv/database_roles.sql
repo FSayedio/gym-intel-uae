@@ -48,11 +48,12 @@ BEGIN
     EXECUTE format('ALTER TYPE public.%I OWNER TO gym_intel_migrator', object.typname);
   END LOOP;
 
-  -- UPDATE on memberships is needed by the importer's current table-lock mode.
-  -- Remove it when database uniqueness replaces that lock in a later change.
+  -- Keep the old image usable before the integrity migration. Afterward the
+  -- shared permission function grants append-only observation/evidence access.
   FOR grant_row IN
     SELECT * FROM (VALUES
-      ('memberships', 'SELECT, INSERT, UPDATE'),
+      ('memberships', CASE WHEN to_regclass('public.memberships_observation_key_index') IS NULL
+        THEN 'SELECT, INSERT, UPDATE' ELSE 'SELECT, INSERT' END),
       ('membership_imports', 'SELECT, INSERT'),
       ('oban_jobs', 'SELECT, INSERT, UPDATE, DELETE'),
       ('oban_peers', 'SELECT, INSERT, UPDATE, DELETE'),
@@ -73,6 +74,9 @@ BEGIN
   LOOP
     EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE public.%I TO gym_intel_app', object.relname);
   END LOOP;
+  IF to_regprocedure('public.configure_observation_access(name,name)') IS NOT NULL THEN
+    PERFORM public.configure_observation_access('gym_intel_app'::name, NULL::name);
+  END IF;
 END
 $$;
 COMMIT;

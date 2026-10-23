@@ -5,6 +5,7 @@ defmodule GymIntel.DashboardQueriesDatabaseTest do
 
   setup do
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(Repo)
+    Repo.delete_all("membership_notes")
     Repo.delete_all(Membership)
     :ok
   end
@@ -45,8 +46,7 @@ defmodule GymIntel.DashboardQueriesDatabaseTest do
       "Original plan",
       "Observed",
       "Source",
-      "Supporting sources",
-      "Source notes"
+      "Supporting sources"
     ]
 
     assert Enum.map(graph_rows, &Map.take(&1, identity)) ==
@@ -222,15 +222,15 @@ defmodule GymIntel.DashboardQueriesDatabaseTest do
     assert Enum.map(rows(), & &1["Gym"]) == ["Monthly"]
   end
 
-  test "duplicate evidence yields one bar and keeps all notes and sources" do
+  test "corroborating sources yield one bar while internal notes stay out of dashboard data" do
     offer("Alpha")
     offer("Alpha", %{source_url: "https://example.com/second", notes: "Second synthetic note"})
     [row] = rows()
     assert row["Advertised charge"] == 200.0
     assert row["Supporting sources"] =~ "https://example.com/test-only"
     assert row["Supporting sources"] =~ "https://example.com/second"
-    assert row["Source notes"] =~ "SYNTHETIC DASHBOARD TEST ONLY"
-    assert row["Source notes"] =~ "Second synthetic note"
+    refute Map.has_key?(row, "Source notes")
+    assert %{rows: [[2]]} = Repo.query!("SELECT count(*) FROM membership_notes")
   end
 
   test "conflicting latest prices do not select an arbitrary minimum" do
@@ -250,6 +250,7 @@ defmodule GymIntel.DashboardQueriesDatabaseTest do
           %{price_vat_status: "included"},
           %{access_scope: "multiple_named_branches"}
         ] do
+      Repo.delete_all("membership_notes")
       Repo.delete_all(Membership)
       offer("Alpha")
       offer("Alpha", changes)
@@ -328,14 +329,17 @@ defmodule GymIntel.DashboardQueriesDatabaseTest do
     assert panel()["description"] =~ "not a cheapest or best-gym ranking"
   end
 
-  test "source date original identity and full notes remain accessible" do
+  test "public metadata retains source and identity but not internal note history" do
     offer("Alpha", %{notes: "Example uncertainty; do not omit"})
     [row] = rows()
     assert row["Source"] == "https://example.com/test-only"
     assert row["Observed"] == "2026-10-22"
     assert row["Branch"] == "Test branch"
     assert row["Original plan"] == "Test monthly plan"
-    assert row["Source notes"] == "Example uncertainty; do not omit"
+    refute Map.has_key?(row, "Source notes")
+
+    assert %{rows: [["Example uncertainty; do not omit"]]} =
+             Repo.query!("SELECT notes FROM membership_notes")
   end
 
   test "bar links retain dates terms and source alongside the conditions table" do
