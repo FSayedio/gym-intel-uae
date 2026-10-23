@@ -15,7 +15,8 @@
 - Prefer small, practical steps. Before each command, explain its purpose, expected result, and verification.
 - Keep these steps distinct: edit -> stage -> commit locally -> push to GitHub -> open PR -> review -> merge -> update local main.
 - At each checkpoint, report the current branch, workflow step, evidence of changes, Git/GitHub status, the learner's next action, and unfinished work.
-- The assistant shows each relevant command, explains its purpose and expected result, executes it, and reports the actual output. This includes Git commands; keep staging, committing, pushing and opening a PR as distinct, explicitly announced steps. Do not treat command execution permission as permission to merge or discard work.
+- The assistant runs task-relevant commands, including Git commands, rather than asking the learner to copy and paste or execute them. Before execution, show the exact command in a copyable code block, explain what it will change and the expected result, then execute it and report the actual output and verification. Ask the learner to run a command only if they explicitly prefer to or a genuine access limitation prevents assistant execution.
+- Keep staging, committing locally, pushing, opening a PR, and updating local main as distinct, explicitly announced steps within the authorised task. Command execution permission is not permission to merge, discard work, or expand the task's scope.
 - Never merge, enable auto-merge, force-push, discard work, expose credentials, recreate the repository, reinstall tools, or change global settings.
 - Do not claim tests or CI exist until they actually do.
 
