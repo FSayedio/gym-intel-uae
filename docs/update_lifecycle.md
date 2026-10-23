@@ -68,6 +68,10 @@ verified backups and two finished import-job records.
 Expected output includes a verified job ID/fingerprint, restore verification,
 cleanup counts, then `PASS: import committed, backup restored and verified`.
 An intermediate PASS line is not overall success; check the final exit status.
+The overall PASS now follows housekeeping and private report finalization. Read
+[saved update status](update_status.md) with `sh scripts/update-status.sh` after
+closing the terminal. It retains two finished summaries and protects active work;
+unknown outcomes remain unknown rather than being labelled rolled back.
 
 ## Failure, privacy and concurrency boundaries
 

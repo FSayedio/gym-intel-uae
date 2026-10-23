@@ -139,6 +139,10 @@ for fixture_candidate in "$fixture_tmp/backups"/backup-*; do
 done
 test "$fixture_count" = 2
 test ! -e "$fixture_backup"
+sh scripts/update-status.sh --directory "$fixture_tmp/backups" > "$fixture_tmp/update-status.log"
+test "$(grep -c '^Outcome: succeeded$' "$fixture_tmp/update-status.log")" = 2
+test ! -e "$fixture_tmp/backups/update-reports/report-000000001.txt"
+test -f "$fixture_tmp/backups/update-reports/report-000000003.txt"
 
 echo 'Checking a failed backup prevents observation and job cleanup'
 fixture_compose exec -T postgres sh /opt/gym-intel/psql.sh \
@@ -150,6 +154,10 @@ if fixture_update_command > "$fixture_tmp/failed-update.log" 2>&1; then
   recovery_fail 'Unsafe backup allowed lifecycle success'; exit 1
 fi
 grep -q 'backup-verification' "$fixture_tmp/failed-update.log"
+sh scripts/update-status.sh --directory "$fixture_tmp/backups" > "$fixture_tmp/update-status.log"
+grep -q '^Outcome: failed$' "$fixture_tmp/update-status.log"
+grep -q '^Backup verification: unknown$' "$fixture_tmp/update-status.log"
+grep -q '^Data/job cleanup commit: not_attempted$' "$fixture_tmp/update-status.log"
 test "$(fixture_compose exec -T postgres sh /opt/gym-intel/psql.sh -qAtc \
   "SELECT count(*) FROM memberships WHERE brand_name='TEST ONLY LIFECYCLE'")" = 2
 test "$(fixture_compose exec -T postgres sh /opt/gym-intel/psql.sh -qAtc \
@@ -164,3 +172,20 @@ test "$(fixture_compose exec -T postgres sh /opt/gym-intel/psql.sh -qAtc \
 test "$(fixture_compose exec -T postgres sh /opt/gym-intel/psql.sh -qAtc \
   "SELECT count(*) FROM oban_jobs WHERE queue='imports' AND worker='GymIntel.Workers.ImportMemberships'")" = 2
 printf 'PASS: rolling-two verified backups/jobs, current-only observations, failed-backup protection and duplicate retry\n'
+sh scripts/update-status.sh --directory "$fixture_tmp/backups" > "$fixture_tmp/update-status.log"
+test "$(grep -c '^Update:' "$fixture_tmp/update-status.log")" = 2
+grep -q '^Outcome: succeeded$' "$fixture_tmp/update-status.log"
+grep -q '^Outcome: failed$' "$fixture_tmp/update-status.log"
+if grep -q 'TEST ONLY LIFECYCLE' "$fixture_tmp/update-status.log"; then exit 1; fi
+
+echo 'Checking real invalid input records not-attempted without a queued job'
+printf '%s\nTEST ONLY LIFECYCLE,TEST BRANCH,TEST PLAN,single_branch,standard,from 194,1,0,0,https://example.com/lifecycle,,2000-01-04,TEST ONLY,,,,\n' \
+  "$fixture_header" > "$RECOVERY_FIXTURE_DATA_DIR/memberships.csv"
+chmod 644 "$RECOVERY_FIXTURE_DATA_DIR/memberships.csv"
+if fixture_update_command > "$fixture_tmp/invalid-update.log" 2>&1; then exit 1; fi
+sh scripts/update-status.sh --directory "$fixture_tmp/backups" > "$fixture_tmp/update-status.log"
+grep -q '^Import commit: not_attempted$' "$fixture_tmp/update-status.log"
+test "$(fixture_compose exec -T postgres sh /opt/gym-intel/psql.sh -qAtc \
+  "SELECT count(*) FROM oban_jobs WHERE queue='imports' AND worker='GymIntel.Workers.ImportMemberships'")" = 2
+printf 'PASS: saved redacted status, rolling-two reports, failed-backup uncertainty and known input rejection\n'
+sh scripts/update-status.sh --directory "$fixture_tmp/backups"

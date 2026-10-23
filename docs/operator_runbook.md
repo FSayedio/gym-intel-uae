@@ -110,6 +110,18 @@ job arguments; never include secrets or private customer information.
 
 ## 4. Distinguish queued, completed and committed
 
+First inspect the [private saved lifecycle reports](update_status.md), without
+rerunning an import:
+
+```bash
+sh scripts/update-status.sh
+```
+
+This is read-only evidence, not a live health check or automatic repair. It shows
+confirmed/not-attempted/unknown outcomes and keeps two finished summaries. A
+missing report or expired job ID is not proof that an import never ran. When a
+stage is unknown, use the safe job/fingerprint queries below before retrying.
+
 List recent import jobs without exposing CSV arguments or raw error payloads:
 
 ```bash
