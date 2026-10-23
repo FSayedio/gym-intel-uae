@@ -16,6 +16,7 @@ COPY priv ./priv
 
 FROM source AS checks
 ENV MIX_ENV=test
+RUN apk add --no-cache openssl
 COPY .formatter.exs ./
 COPY test ./test
 COPY scripts ./scripts

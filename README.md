@@ -12,16 +12,17 @@ image target. Host ports are configurable without changing container endpoints.
 Gym facts must include a source and observation date.
 Missing information remains unknown.
 
-Status: local pricing MVP delivered. The seven-feature foundation/reliability
-milestone includes this Feature 7 documentation/operator cleanup; see the roadmap
-for dated delivery evidence. Finishing those seven closes one milestone, not the
-project. Broader product work,
+Status: local pricing MVP and the seven-feature foundation/reliability milestone
+delivered through [PR #15](https://github.com/FSayedio/gym-intel-uae/pull/15).
+The next focused feature is [local database backup and verified restore](docs/database_recovery.md).
+Finishing the seven features closed one milestone, not the project. Broader product work,
 operational recovery and eventual Kubernetes deployment remain on the
 [roadmap](docs/roadmap.md).
 
 ## Start here
 
 - [Operator runbook: setup, import, verify, diagnose and stop](docs/operator_runbook.md)
+- [Database backup, isolated restore verification and retention](docs/database_recovery.md)
 - [Detailed local configuration and credentials](docs/local_development.md)
 - [Data contract and source limitations](docs/data_contract.md)
 - [CI checks and manual review policy](docs/ci.md)
@@ -42,5 +43,6 @@ There are no filters. Dates and terms differ; Warehouse's historical access scop
 is unresolved. These are not equivalent memberships, live quotes or all-in costs.
 
 Keep this deployment local. Secrets are private file mounts, merge governance
-is manual, and restore, pruning and full clean-machine reproduction are not
-delivered capabilities. See the handoff and roadmap for evidence and open limits.
+is manual, and off-device recovery, scheduled backups, job pruning and full
+clean-machine reproduction remain open. See the handoff and roadmap for evidence
+and limits; local restore verification is not a full disaster-recovery service.

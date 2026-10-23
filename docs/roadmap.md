@@ -28,11 +28,11 @@ new promised deadline.
 | 4. Input/CSV hardening | Explicit numeric/date rules, bounded reading and compatible CSV validation | [PR #12](https://github.com/FSayedio/gym-intel-uae/pull/12), merged |
 | 5. Observation integrity | Database-enforced typed identity; preserved internal notes/provenance; public view | [PR #13](https://github.com/FSayedio/gym-intel-uae/pull/13), merged |
 | 6. Runtime packaging / Compose portability | Non-root release, separate checks image, explicit helpers, configurable ports, live-job verification | [PR #14](https://github.com/FSayedio/gym-intel-uae/pull/14), merged as `03cf1df`; PR and post-merge CI passed |
-| 7. Documentation/operator cleanup | Current runbook/handoff, archived history, explicit roadmap and open gaps | Documentation in this change; its associated PR/CI/merge establishes delivery, not this table alone. Branch: `codex/operator-handoff`. |
+| 7. Documentation/operator cleanup | Current runbook/handoff, archived history, explicit roadmap and open gaps | [PR #15](https://github.com/FSayedio/gym-intel-uae/pull/15), merged as `e7dfb28`; PR/post-merge CI passed and local main synchronized |
 
 **Baseline entering Feature 7: 6/7 merged at `03cf1df`.** This is a dated count,
-not a live GitHub status. After Feature 7's reviewed merge and local sync, this
-milestone becomes 7/7—not the entire project. Check delivery without relying on
+not a live GitHub status. Feature 7's reviewed merge and local sync at `e7dfb28`
+closed this milestone at **7/7—not the entire project**. Check delivery without relying on
 an old chat message or an embedded "uncommitted" checkpoint:
 
 ```bash
@@ -65,6 +65,16 @@ add filters merely to fill the list.
 Operational readiness matters before distributing or cluster-hosting the stack.
 Kubernetes planning may explain tradeoffs earlier; a successful Compose run is
 not cluster-deployment acceptance evidence.
+
+### First operational-recovery feature
+
+[Local database backup and verified restore](database_recovery.md) is the first
+focused feature after the seven-item milestone. It adds on-demand whole-database
+capture, a brief app pause/resume, an isolated restore rehearsal, and seven-copy
+retention. Its associated PR/CI/review/merge establishes delivery. Off-device
+storage, scheduling, actual restore-to-live procedures, Grafana/credential
+recovery, job pruning and monitoring remain separate work; this is not completion
+of the operational-recovery/visibility milestone.
 
 ## Kubernetes is a later deployment milestone
 
@@ -99,7 +109,7 @@ earlier in-chat roadmap estimate or a claimed verbatim two-bucket classification
 
 | Area / review reference | Why missed or deferred in the first slice | Incorporation path and current boundary |
 | --- | --- | --- |
-| Backup, retention and restore; review's untested recovery | First MVP proved import/display, not the data lifecycle. Upgrade archive checks did not test restoration. | Define private storage/retention; restore into isolation; compare facts/grants. No tested restore procedure or backup service exists. |
+| Backup, retention and restore; review's untested recovery | First MVP proved import/display, not the data lifecycle. Upgrade archive checks did not test restoration. | The [recovery feature](database_recovery.md) adds manual private PostgreSQL capture, isolated restore verification and seven-copy retention. Off-device protection, scheduling and reviewed live-recovery/Grafana/credential procedures remain open. |
 | Job retention (m2), diagnostics, observability | Durable snapshots solved mutable-file retries, not long-term privacy/storage/operations. | Agree pruning, redacted errors/logs, metrics and alerts; test expiry without losing required evidence. No scheduled pruning/monitoring. Keep receipts internal unless a real user need emerges. |
 | Performance/indexes (M4, m3) | Correctness for bounded small CSVs preceded measurement. Removing the blanket lock did not eliminate query cost. | Benchmark realistic loads and explain plans before batching/index changes. Uniqueness tests do not prove throughput or multi-app readiness. |
 | Domain normalization, IDs, named branches (m6, m8, m16) | Flat sourced observations kept the pipeline small; canonical entities/UUID redesign was not required to prove it. | Define identifiers and branch-list semantics, then justify a compatible migration. Preserve source text/history; no inferred marketing-tier equivalence or blanket ID rewrite. |

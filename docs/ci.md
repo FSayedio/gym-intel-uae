@@ -90,6 +90,16 @@ The test cleans up only its own generated resources and fails if cleanup fails.
 This is independent of sandbox/unit tests; it is not a hosted Grafana/full-stack
 or fresh-machine reproduction test.
 
+The recovery feature adds a separate `scripts/verify-recovery.sh` step. It runs
+the actual backup/restore entrypoints against a disposable synthetic PostgreSQL
+and app fixture with no host ports or development volumes/secrets. It verifies
+pause/resume, full restored baselines, real role denials and identity/note probes,
+rejects corrupted archives (including one with a recomputed checksum) and a
+weakened source permission profile, and preserves the previous good backup.
+The checks image includes the OpenSSL CLI for filesystem/checksum unit tests;
+this does not add it to the final runtime image. No private archive/log is uploaded.
+See [Database recovery](database_recovery.md) for limits and local commands.
+
 `scripts/verify-compose.sh` checks the rendered model with default and alternate
 host ports. Both must retain localhost bindings, original internal ports, three
 ARM64 services, the runtime target, correct app secret and named-volume keys.
@@ -113,6 +123,7 @@ docker compose build app
 sh scripts/test-database.sh --ci
 sh scripts/verify-compose.sh
 sh scripts/verify-release.sh
+sh scripts/verify-recovery.sh
 ```
 
 These checks use the existing local PostgreSQL service but only test databases,
@@ -156,8 +167,10 @@ successful hosted PR run and the exact tested revision, review/merge, and local
 for unavailable enforcement, not a claim that enforcement was delivered.
 
 This does not add static analysis, coverage thresholds, visual browser automation,
-full-stack startup, backup/restore, load tests,
-or clean-machine reproduction. Those remain later roadmap items. Hosted checks
+full-stack startup, off-device disaster recovery, load tests or clean-machine
+reproduction. The recovery extension verifies a bounded local-style logical
+capture and isolated restore, not a production backup service. Other gaps remain
+later roadmap items. Hosted checks
 can also fail due to registry access, runner availability, quotas or infrastructure;
 the logs must distinguish that from an application regression.
 

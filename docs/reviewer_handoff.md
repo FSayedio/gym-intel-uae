@@ -4,6 +4,25 @@ Updated 23 October 2026. Review this page first; the
 [historical checkpoints](reviewer_history.md) preserve earlier evidence and
 superseded designs, not current operating instructions.
 
+The foundation/reliability milestone is delivered through
+[PR #15](https://github.com/FSayedio/gym-intel-uae/pull/15), merge `e7dfb28`, with
+green PR/post-merge CI and synchronized local main. The following Feature 6/7
+sections retain dated evidence. Current recovery tooling and its exact limits
+are documented in [Database recovery](database_recovery.md); its own PR delivery
+must be checked separately.
+
+## Recovery verification checkpoint — 23 October 2026
+
+The recovery feature's final local suite passed **135 tests** (seed `639705`)
+and the synthetic full-database rehearsal passed. A real private development
+backup was restored into isolation and rechecked after publication; original
+membership/note/import checksums, six observations/four brands and volume identity
+were unchanged. All three development services were up afterward. No real
+historical backup was pruned; retention was tested with synthetic bundles.
+See [Database recovery](database_recovery.md) for commands, failure tests,
+isolation and limits. These local results do not replace this change's hosted CI
+or authorize a restore over live data. No data/migration/dashboard change is made.
+
 ## Outcome and scope
 
 Help a person make their own gym choice using objective, source-backed facts.
@@ -142,10 +161,13 @@ blockers from optional improvements. Do not merge as part of the review.
 
 ## Limits that must remain visible
 
-No tested restore/retention service, job pruning, abrupt-interruption recovery
-drill, multi-app load assessment, fully independent clean-machine reproduction,
-or automated browser-level regression suite. The final-runtime smoke test is not
-all of those. Only PostgreSQL currently has a Compose healthcheck.
+The recovery feature adds on-demand private PostgreSQL backups, isolated restore
+verification and seven-copy retention. It does not deliver off-device recovery,
+an automatic schedule, restore over development, or Grafana/credential recovery.
+Job pruning, abrupt-interruption recovery drills, multi-app load assessment,
+fully independent clean-machine reproduction and automated browser regression
+remain open. The runtime smoke test is not all of those; only PostgreSQL currently
+has a Compose healthcheck.
 
 The previously reported Decimal 3.1.1 advisory
 `EEF-CVE-2026-97853 / GHSA-6c27-994x-c52f` remains unresolved; upstream Ecto xref

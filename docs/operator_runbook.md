@@ -154,6 +154,7 @@ For verification after a reviewed change:
 sh scripts/test-database.sh --ci
 sh scripts/verify-compose.sh
 sh scripts/verify-release.sh
+sh scripts/verify-recovery.sh
 sh scripts/verify-permissions.sh
 git diff --check
 ```
@@ -163,6 +164,8 @@ The test wrapper builds the separate checks image. These are not all read-only:
 source tests write only `gym_intel_test`; release verification creates and removes
 its own generated database/roles/container; permission probes use transactional
 test objects in development and roll them back. No development CSV is imported.
+The recovery rehearsal creates its own synthetic PostgreSQL/app fixture and
+isolated restore container, without development volumes or secrets.
 See [test isolation](local_development.md#repeatable-tests) and [CI](ci.md).
 
 Expected: passing tests/checks and successful scoped cleanup; `git diff --check`
@@ -189,10 +192,13 @@ this gate. Restart the worker only after the approved migration/grant checks.
 
 The recorded Feature 5/6 upgrades included private backups, archive-list checks,
 volume identity and original-data checksums. They did **not** verify a restore.
-There is no automated backup/retention service or tested restoration procedure.
-If recovery is required, preserve evidence and obtain an explicitly reviewed plan;
-this runbook intentionally provides no untested restore or destructive cleanup
-recipe. A checked archive in `/tmp` is not durable disaster recovery.
+For the current on-demand backup and isolated restore workflow, use
+[Database recovery](database_recovery.md). It provides a verified local copy and
+seven-copy retention, not an automatic schedule or restore-to-live operation.
+If live recovery is required, preserve evidence and obtain an explicitly reviewed
+target/recovery plan; do not overwrite development from an old recipe. A checked
+archive in `/tmp` is not durable disaster recovery, and a local copy is not
+protection against losing the laptop/drive.
 
 Integrity migration `down` refuses to discard note history. Do not force it or
 start an old importer against the newer append-only grants. Prefer a reviewed
