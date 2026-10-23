@@ -21,6 +21,7 @@ defmodule GymIntel.MixProject do
 
   defp deps do
     [
+      {:decimal, "~> 3.1.2"},
       {:ecto_sql, "~> 3.14.0"},
       {:postgrex, "~> 0.22.4"},
       {:oban, "~> 2.24.1"},

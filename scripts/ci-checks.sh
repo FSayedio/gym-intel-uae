@@ -16,8 +16,14 @@ fi
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$project_dir"
 
+# CI must fetch current advisory information, not silently use an offline cache
+# or accept findings through inherited environment overrides.
+unset HEX_OFFLINE HEX_IGNORE_ADVISORIES HEX_IGNORE_RETIREMENTS
+
 echo "Checking locked dependencies"
 mix deps.get --check-locked
+echo "Auditing locked dependencies for advisories and retirements"
+mix hex.audit
 echo "Checking Elixir formatting"
 mix format --check-formatted
 echo "Compiling test application with warnings as errors"

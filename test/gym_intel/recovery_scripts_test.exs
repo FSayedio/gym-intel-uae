@@ -76,7 +76,15 @@ defmodule GymIntel.RecoveryScriptsTest do
       assert status != 0
     end
 
-    for arguments <- [[], ["relative"], ["/tmp/other"], ["a", "b"]] do
+    for arguments <- [
+          [],
+          ["relative"],
+          ["/tmp/other"],
+          ["a", "b"],
+          ["relative", "--with-dashboard"],
+          ["/tmp/other", "--unknown"],
+          ["/tmp/other", "--with-dashboard", "extra"]
+        ] do
       {_output, 2} =
         System.cmd("sh", ["scripts/verify-database-backup.sh" | arguments],
           stderr_to_stdout: true
@@ -91,6 +99,16 @@ defmodule GymIntel.RecoveryScriptsTest do
     refute File.exists?(hd(bundles))
     assert Enum.all?(tl(bundles), &File.dir?/1)
     assert File.exists?(Path.join(root, ".gym-intel-backups-v1"))
+  end
+
+  test "read-only dashboard baseline comparison precedes sequence-advancing insert probes" do
+    script = File.read!("scripts/verify-database-backup.sh")
+
+    {comparison, _} =
+      :binary.match(script, "Dashboard verification changed the captured PostgreSQL state")
+
+    {insert_probe, _} = :binary.match(script, "scripts/recovery/probes.sql")
+    assert comparison < insert_probe
   end
 
   test "standalone capture cannot bypass an update lock", %{directory: directory} do
@@ -169,15 +187,17 @@ defmodule GymIntel.RecoveryScriptsTest do
     File.write!(docker, "#!/bin/sh\necho DOCKER_MUST_NOT_RUN\nexit 99\n")
     File.chmod!(docker, 0o755)
 
-    {message, status} =
-      System.cmd("sh", ["scripts/verify-database-backup.sh", bundle],
-        env: [{"PATH", directory <> ":" <> System.fetch_env!("PATH")}],
-        stderr_to_stdout: true
-      )
+    for options <- [[], ["--with-dashboard"]] do
+      {message, status} =
+        System.cmd("sh", ["scripts/verify-database-backup.sh", bundle] ++ options,
+          env: [{"PATH", directory <> ":" <> System.fetch_env!("PATH")}],
+          stderr_to_stdout: true
+        )
 
-    assert status == 1
-    assert message =~ "checksum mismatch"
-    refute message =~ "DOCKER_MUST_NOT_RUN"
+      assert status == 1
+      assert message =~ "checksum mismatch"
+      refute message =~ "DOCKER_MUST_NOT_RUN"
+    end
   end
 
   defp fake_docker(directory) do

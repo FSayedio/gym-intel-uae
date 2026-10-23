@@ -184,6 +184,7 @@ sh scripts/test-database.sh --ci
 sh scripts/verify-compose.sh
 sh scripts/verify-release.sh
 sh scripts/verify-recovery.sh
+sh scripts/verify-readiness.sh
 sh scripts/verify-permissions.sh
 git diff --check
 ```
@@ -195,6 +196,10 @@ its own generated database/roles/container; permission probes use transactional
 test objects in development and roll them back. No development CSV is imported.
 The recovery rehearsal creates its own synthetic PostgreSQL/app fixture and
 isolated restore container, without development volumes or secrets.
+The readiness rehearsal starts its own bounded PostgreSQL instance and generated
+worker, measures 1,000-row/replay/overlap imports, and kills only that test worker
+behind a deterministic transaction gate. Its explicit exact-job recovery is not
+automatic production orphan rescue. See [measurement and interruption limits](ci.md#bounded-setup-workload-and-interruption-rehearsal).
 See [test isolation](local_development.md#repeatable-tests) and [CI](ci.md).
 
 Expected: passing tests/checks and successful scoped cleanup; `git diff --check`
@@ -224,6 +229,10 @@ volume identity and original-data checksums. They did **not** verify a restore.
 For the current on-demand backup and isolated restore workflow, use
 [Database recovery](database_recovery.md). It provides a verified local copy and
 two-copy retention, not an automatic schedule or restore-to-live operation.
+The optional `--with-dashboard` rehearsal also reconstructs a fresh Grafana from
+Git against the restored database with new credentials, without activating it.
+Use the [incident procedure](database_recovery.md#incident-procedure-preserve-restore-verify-explicitly-cut-over)
+for recovery-point, credential-loss and persistent-target/cutover decisions.
 If live recovery is required, preserve evidence and obtain an explicitly reviewed
 target/recovery plan; do not overwrite development from an old recipe. A checked
 archive in `/tmp` is not durable disaster recovery, and a local copy is not

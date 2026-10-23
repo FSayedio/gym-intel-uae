@@ -4,8 +4,11 @@ set -eu
 umask 077
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
 . "$project_dir/scripts/recovery/common.sh"
-if [ "$#" -ne 1 ]; then
-  echo 'Usage: sh scripts/verify-database-backup.sh /absolute/path/to/backup-directory' >&2
+restore_dashboard=false
+if [ "$#" = 2 ] && [ "$2" = --with-dashboard ]; then
+  restore_dashboard=true
+elif [ "$#" -ne 1 ]; then
+  echo 'Usage: sh scripts/verify-database-backup.sh /absolute/path/to/backup-directory [--with-dashboard]' >&2
   exit 2
 fi
 bundle=$1
@@ -20,6 +23,15 @@ recovery_private_file "$backup_root/.gym-intel-backups-v1"
 test "$(cat "$backup_root/.gym-intel-backups-v1")" = gym-intel-backups-v1
 recovery_check_bundle
 test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$recovery_image")" = linux/arm64
+restore_grafana_image=${GRAFANA_RECOVERY_IMAGE:-grafana/grafana:13.2}
+restore_checks_image=${CHECK_IMAGE:-gym-intel-checks:local}
+if [ "$restore_dashboard" = true ]; then
+  for restore_tool_image in "$restore_grafana_image" "$restore_checks_image"; do
+    test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$restore_tool_image")" = linux/arm64 || {
+      recovery_fail 'Dashboard verification requires locally available ARM64 Grafana/checks images'; exit 1;
+    }
+  done
+fi
 if [ -e "$bundle/restore.log" ] || [ -L "$bundle/restore.log" ]; then
   recovery_private_file "$bundle/restore.log"
 fi
@@ -30,9 +42,24 @@ restore_tmp=$(mktemp -d "$restore_temp_base/gym-intel-restore.XXXXXX")
 restore_name="gym-intel-restore-$(date +%s)-$$"
 restore_id=''
 restore_run="$(date +%s)-$$"
+restore_network=''
+restore_network_name="gym-intel-restore-net-$restore_run"
+restore_grafana=''
+restore_grafana_name="gym-intel-restore-grafana-$restore_run"
 cleanup_restore() {
   restore_status=$?
   trap - EXIT HUP INT TERM
+  if [ "$restore_dashboard" = true ]; then
+    restore_grafana=$(docker inspect --format '{{.Id}}' "$restore_grafana_name" 2>/dev/null || true)
+    if [ -n "$restore_grafana" ]; then
+      if [ "$(docker inspect --format '{{index .Config.Labels "com.gym-intel.recovery"}}' "$restore_grafana" 2>/dev/null)" = "$restore_run" ]; then
+        docker rm -f "$restore_grafana" >/dev/null 2>&1 || restore_status=1
+      else
+        echo 'FAIL: temporary Grafana cleanup identity check failed' >&2
+        restore_status=1
+      fi
+    fi
+  fi
   if [ -z "$restore_id" ]; then
     # docker run can create a container then fail before returning its ID.
     # Resolve only our generated name; the label check still gates removal.
@@ -46,9 +73,20 @@ cleanup_restore() {
       restore_status=1
     fi
   fi
+  if [ "$restore_dashboard" = true ]; then
+    restore_network=$(docker network inspect --format '{{.Id}}' "$restore_network_name" 2>/dev/null || true)
+    if [ -n "$restore_network" ]; then
+      if [ "$(docker network inspect --format '{{index .Labels "com.gym-intel.recovery"}}' "$restore_network")" = "$restore_run" ]; then
+        docker network rm "$restore_network" >/dev/null 2>&1 || restore_status=1
+      else
+        echo 'FAIL: temporary network cleanup identity check failed' >&2
+        restore_status=1
+      fi
+    fi
+  fi
   rm -f "$restore_tmp/password" "$restore_tmp/migrator_password" \
     "$restore_tmp/app_password" "$restore_tmp/reader_password" \
-    "$restore_tmp/restored.json" "$restore_tmp/denied.log" || restore_status=1
+    "$restore_tmp/admin_password" "$restore_tmp/restored.json" "$restore_tmp/denied.log" || restore_status=1
   rmdir "$restore_tmp" 2>/dev/null || restore_status=1
   if [ "$restore_status" -ne 0 ]; then
     echo "FAIL: restore verification; inspect private log $bundle/restore.log" >&2
@@ -63,10 +101,18 @@ for restore_secret in migrator_password app_password reader_password; do
 done
 # Private host directory is 700; initdb's non-root user needs its one mounted file.
 chmod 644 "$restore_tmp/password"
-printf 'Restoring into an isolated PostgreSQL container (no network or live mounts)\n'
+set -- --network none
+if [ "$restore_dashboard" = true ]; then
+  restore_network=$(docker network create --internal \
+    --label "com.gym-intel.recovery=$restore_run" "$restore_network_name")
+  set -- --network "$restore_network" --network-alias postgres
+  printf 'Restoring into an isolated replacement network (no host ports or live volumes)\n'
+else
+  printf 'Restoring into an isolated PostgreSQL container (no network or live mounts)\n'
+fi
 restore_id=$(docker run --detach --platform linux/arm64 --pull never \
   --name "$restore_name" --label "com.gym-intel.recovery=$restore_run" \
-  --network none --memory 768m --cpus 1 --pids-limit 128 \
+  "$@" --memory 768m --cpus 1 --pids-limit 128 \
   --tmpfs /var/lib/postgresql:rw,nosuid,noexec,size=512m \
   -e POSTGRES_USER=gym_intel -e POSTGRES_DB=postgres \
   -e POSTGRES_PASSWORD_FILE=/run/secrets/restore_password \
@@ -146,6 +192,53 @@ restore_psql gym_intel_grafana gym_intel_dev -qAtc \
 restore_psql gym_intel_migrator gym_intel_dev -q -c \
   'BEGIN; CREATE TABLE public.recovery_probe (id integer); DROP TABLE public.recovery_probe; ROLLBACK;' \
   >> "$bundle/restore.log" 2>&1
+if [ "$restore_dashboard" = true ]; then
+  # Restore stays disposable: no production service, port, volume or credential.
+  openssl rand -hex -out "$restore_tmp/admin_password" 32
+  chmod 644 "$restore_tmp/admin_password" "$restore_tmp/reader_password"
+  restore_grafana=$(docker run --detach --platform linux/arm64 --pull never \
+    --name "$restore_grafana_name" --label "com.gym-intel.recovery=$restore_run" \
+    --network "$restore_network" --network-alias grafana \
+    --memory 512m --cpus 1 --pids-limit 256 --user 472:0 \
+    --tmpfs /var/lib/grafana:rw,nosuid,noexec,size=128m,uid=472,gid=0,mode=0750 \
+    --entrypoint /bin/sh \
+    -e GF_AUTH_ANONYMOUS_ENABLED=true -e GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer \
+    -e GF_SECURITY_ADMIN_USER=admin \
+    -e GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_admin_password \
+    -e GF_ANALYTICS_REPORTING_ENABLED=false -e GF_ANALYTICS_CHECK_FOR_UPDATES=false \
+    -e GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false \
+    -v "$restore_tmp/admin_password:/run/secrets/grafana_admin_password:ro" \
+    -v "$restore_tmp/reader_password:/run/secrets/grafana_database_password:ro" \
+    -v "$project_dir/grafana/start.sh:/opt/gym-intel/grafana-start.sh:ro" \
+    -v "$project_dir/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro" \
+    -v "$project_dir/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro" \
+    -v "$project_dir/grafana/dashboards:/var/lib/grafana/project-dashboards:ro" \
+    "$restore_grafana_image" /opt/gym-intel/grafana-start.sh 2>> "$bundle/restore.log")
+  if ! docker run --rm --platform linux/arm64 --pull never \
+    --network "$restore_network" --memory 512m --cpus 1 --pids-limit 256 \
+    --read-only --tmpfs /tmp:rw,nosuid,noexec,size=64m \
+    -e "RECOVERY_EXPECTED_GYM=${RECOVERY_EXPECTED_GYM:-}" \
+    -e "RECOVERY_EXPECTED_PRICE=${RECOVERY_EXPECTED_PRICE:-}" \
+    -v "$restore_tmp/admin_password:/run/secrets/grafana_admin_password:ro" \
+    -v "$project_dir/grafana/dashboards/memberships.json:/expected-dashboard.json:ro" \
+    -v "$project_dir/scripts/recovery/dashboard_probe.exs:/probe.exs:ro" \
+    "$restore_checks_image" elixir -r /probe.exs -e 'GymIntel.Recovery.DashboardProbe.run()'; then
+    docker logs "$restore_grafana" >> "$bundle/restore.log" 2>&1 || true
+    recovery_fail 'Replacement dashboard verification failed'; exit 1
+  fi
+  test "$(restore_psql gym_intel gym_intel_dev -qAtc \
+    "SELECT count(*) FROM pg_stat_activity WHERE usename='gym_intel_app' AND datname='gym_intel_dev'")" = 0 || {
+    recovery_fail 'Unexpected worker/runtime connection during replacement verification'; exit 1;
+  }
+  restore_psql gym_intel gym_intel_dev -qAt < "$project_dir/scripts/recovery/snapshot.sql" \
+    > "$restore_tmp/restored.json" 2>> "$bundle/restore.log"
+  cmp -s "$bundle/baseline.json" "$restore_tmp/restored.json" || {
+    recovery_fail 'Dashboard verification changed the captured PostgreSQL state'; exit 1;
+  }
+fi
+
+# These rolled-back inserts still advance sequences. Keep every full captured
+# baseline comparison (including the optional HTTP read check) before them.
 restore_psql gym_intel_app gym_intel_dev -q \
   < "$project_dir/scripts/recovery/probes.sql" >> "$bundle/restore.log" 2>&1
 printf 'PASS: complete restored baseline, actual role denials, identity/initial-note probes; no worker started\n'

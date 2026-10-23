@@ -72,6 +72,19 @@ bundle=$fixture_backup
 recovery_check_verified
 fixture_original_sha=$(recovery_sha "$fixture_backup/database.dump")
 
+echo 'Rebuilding Grafana from Git against restored data and fresh replacement credentials'
+RECOVERY_EXPECTED_GYM='TEST ONLY BACKUP' RECOVERY_EXPECTED_PRICE=199 \
+  sh scripts/verify-database-backup.sh "$fixture_backup" --with-dashboard
+test "$(recovery_sha "$fixture_backup/database.dump")" = "$fixture_original_sha"
+if RECOVERY_EXPECTED_GYM='TEST ONLY BACKUP' RECOVERY_EXPECTED_PRICE=198 \
+  sh scripts/verify-database-backup.sh "$fixture_backup" --with-dashboard \
+    > "$fixture_tmp/wrong-dashboard.log" 2>&1; then
+  recovery_fail 'Replacement dashboard accepted a wrong expected price'; exit 1
+fi
+grep -q 'Synthetic recovered offer differs' "$fixture_tmp/wrong-dashboard.log"
+test "$(recovery_sha "$fixture_backup/database.dump")" = "$fixture_original_sha"
+printf 'PASS: replacement Grafana recovery and rejection of an incorrect expected price\n'
+
 echo 'Checking corrupted archives fail before use and cannot replace the good backup'
 fixture_bad="$fixture_tmp/backups/.pending-BAD001"
 mkdir "$fixture_bad"
