@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: gym_intel
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
-    command: ["postgres", "-c", "hba_file=/etc/postgresql/pg_hba.conf"]
+    command: ["postgres", "-c", "hba_file=/opt/gym-intel/pg_hba.conf"]
     secrets:
       - postgres_password
       - grafana_database_password
@@ -21,24 +21,23 @@ services:
       timeout: 3s
       retries: 15
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
-      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
-      - ./postgres/psql.sh:/opt/gym-intel/psql.sh:ro
-      - ./postgres/role-psql.sh:/opt/gym-intel/role-psql.sh:ro
-      - ./postgres/configure-reader.sh:/opt/gym-intel/configure-reader.sh:ro
-      - ./postgres/configure-roles.sh:/opt/gym-intel/configure-roles.sh:ro
-      - ./priv/database_roles.sql:/opt/gym-intel/database_roles.sql:ro
-      - ./priv/grafana_reader.sql:/opt/gym-intel/grafana_reader.sql:ro
+      - ./postgres:/opt/gym-intel:ro
+      - ./priv:/opt/gym-intel-priv:ro
 
   app:
+    image: gym-intel-runtime:local
+    pull_policy: never
     build:
       context: .
+      target: runtime
     platform: linux/arm64
     depends_on:
       postgres:
         condition: service_healthy
+    stop_grace_period: 20s
     environment:
       DATABASE_NAME: gym_intel_dev
       DATABASE_USER: gym_intel_app
@@ -68,7 +67,7 @@ services:
       - grafana_admin_password
       - grafana_database_password
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${GRAFANA_HOST_PORT:-3000}:3000"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/start.sh:/opt/gym-intel/grafana-start.sh:ro

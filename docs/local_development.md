@@ -8,6 +8,66 @@ The MVP foundation runs exactly three Docker services:
 
 All three images support the Mac's ARM64 architecture. PostgreSQL and Grafana bind only to `127.0.0.1`, so they are not exposed to the local network. Grafana permits anonymous Viewer access and requires an administrator login for administration. PostgreSQL requires SCRAM passwords for socket and network connections. The running app uses a limited account; migrations run separately with their own credentials.
 
+## Runtime image and optional host ports
+
+The default app image is a packaged Elixir release, `gym-intel-runtime:local`,
+running as UID/GID `10001`. It bundles the Erlang runtime and required libraries,
+but not the Mix/Hex/Rebar build tools or full application source tree. Migrations
+and their SQL resources remain packaged under the application's `priv` directory.
+The matching Alpine runtime is built separately from the tool-filled `checks`
+target. Local app images are built locally, not pulled from or published to a
+registry. Changing code requires rebuilding; there is no live source-code mount.
+App shutdown allows 20 seconds to cover Oban's 15-second grace period. Erlang
+distribution is disabled; operators use short-lived `eval` helpers, not remote
+RPC. The image has an unprivileged user and root-owned application files, but is
+not a fully read-only filesystem or a security boundary against Docker's owner.
+
+By default nothing about your dashboard address changes. Optional host settings:
+
+```text
+POSTGRES_HOST_PORT=5432
+GRAFANA_HOST_PORT=3000
+```
+
+Use a private ignored `.env` based on `.env.example`, or set the values for a
+command. For example, `GRAFANA_HOST_PORT=3001 docker compose up -d grafana` opens
+Grafana at `http://127.0.0.1:3001`. This recreates that service when its port
+changes, not its data volume. Use the same setting consistently for later
+Compose commands. Both bindings stay on `127.0.0.1`; container connections remain
+`postgres:5432`, not the host port. These settings avoid address/port conflicts;
+they do not provide redundant services or failover.
+
+Keep the default project name `gym-intel-uae` for the existing stack. Compose's
+project-name overrides select different project-scoped networks/volumes, which
+can make existing data appear absent. Do not rename the project or remove volumes
+as a workaround. This feature supports ARM64 Docker hosts only; an x86 build,
+native macOS release or full independent-machine setup is not claimed verified.
+
+PostgreSQL configuration/scripts are mounted as the read-only `postgres/`
+directory at `/opt/gym-intel`; SQL resources use read-only `priv/` at
+`/opt/gym-intel-priv`. Authentication rules are read from
+`/opt/gym-intel/pg_hba.conf`. This replaces individual tracked-file binds: during
+the local upgrade, a Git file replacement left two old binds pointing at deleted
+files, causing grant refresh to fail even though host files existed. Directory
+mounts resolve the current files by pathname. This does not change the named
+database volume or solve arbitrary secret-file rotation; credentials remain
+separate file mounts and may require recreation when replaced.
+
+An existing stack needs one PostgreSQL-container recreation to apply those mount
+changes. Confirm no pending jobs, pause the app, take a private database backup,
+and record data checksums/volume identity first. Then run:
+
+```bash
+docker compose up -d --no-deps --force-recreate --wait postgres
+sh scripts/migrate.sh
+docker compose up -d --no-deps app
+sh scripts/verify-permissions.sh
+```
+
+Verify the same `gym-intel-uae_postgres_data` volume and unchanged original rows
+afterward. Do not use `down -v`, delete/reinitialize a volume, or silently change
+the project name. A backup archive-list check is not a full restore drill.
+
 ## Local secrets and Grafana administrator login
 
 Before starting the stack, generate a local password. These commands preserve
@@ -113,6 +173,14 @@ Run this after generating all five secret files above. The role setup creates
 the accounts, transfers existing development tables to the migrator, and applies
 explicit runtime grants. It is safe to rerun with the same secret files. It is
 guarded to `gym_intel_dev`, so it does not transfer ownership of test databases.
+
+`scripts/migrate.sh` now invokes `bin/gym_intel eval 'GymIntel.Release.migrate()'`
+in a short-lived runtime container, then refreshes grants. It prints the number
+of newly applied migrations (zero means none pending). It does not create the
+database and is not run automatically on app startup. Failures exit nonzero;
+fix the cause rather than resetting data. Runtime migrations use Ecto's packaged
+migration files without requiring Mix. Existing one-off `app mix ...` commands
+no longer work in the runtime image; use the operator helpers or checks target.
 
 The running app never applies migrations on boot. `scripts/migrate.sh` runs
 pending migrations as `gym_intel_migrator` and reapplies grants afterwards.
@@ -274,16 +342,15 @@ and each row's notes for unresolved terms; these are not verified all-in costs.
 After rebuilding the app with the command above, enqueue the file:
 
 ```bash
-docker compose exec -T app mix run --no-start -e '
-Application.put_env(:gym_intel, Oban,
-  repo: GymIntel.Repo, queues: false, plugins: false)
-{:ok, _} = Application.ensure_all_started(:gym_intel)
-{:ok, job} = GymIntel.Workers.ImportMemberships.enqueue_file("/app/data/memberships.csv")
-IO.puts("Queued job #{job.id}")
-'
+sh scripts/import-csv.sh data/memberships.csv
 ```
 
-The submitting process has no queues; the running app executes the job. The job
+Expected: `Queued import job <id>; check job state for completion.` The wrapper
+accepts one existing path under `data/`, rejects traversal components, and passes
+the container path as an environment value rather than interpolating it into
+Elixir code. Invalid/unreadable input exits nonzero without logging raw CSV/job
+arguments. Detailed validation rules remain in the data contract/tests. The
+submitting process has no queues; the running app executes the job. The job
 stores the UTF-8 file contents, limited to 1,000,000 bytes, rather than a mutable
 file path. These contents remain in Oban's job record; do not submit secrets.
 One import executes at a time per app instance. Unexpected failures have up to
@@ -306,11 +373,14 @@ as an Oban result report.
 
 ## Repeatable tests
 
-Rebuild the image after code or dependency edits. Run in-memory tests without
-starting the application (database-tagged tests are excluded):
+Tests use `compose.checks.yaml`, an ephemeral override of the same `app` service,
+not a fourth permanent service. It selects the separate `gym-intel-checks:local`
+image containing Mix, source and tests. The runtime image cannot run Mix tests.
+For in-memory tests without starting the app (database tests excluded):
 
 ```bash
-docker compose run --rm --no-deps -e MIX_ENV=test \
+docker compose -f compose.yaml -f compose.checks.yaml build app
+docker compose -f compose.yaml -f compose.checks.yaml run --rm --no-deps \
   -v "$PWD/test:/app/test" app mix test --no-start
 ```
 
@@ -323,6 +393,8 @@ sh scripts/test-database.sh
 That script mounts owner credentials only in a temporary test container because
 the existing suite creates its database and changes constraints. It hardcodes
 `gym_intel_test`; development ownership and runtime grants are not changed.
+It builds the checks target from the current checkout before running it, rather
+than accidentally testing an older runtime image.
 Database tests refuse any other database name. Synthetic rows and test jobs use
 sandbox transactions and are rolled back after each test. The concurrency tests
 need independent committed connections; they use uniquely named synthetic rows
@@ -339,15 +411,54 @@ the test database. A live queue smoke check is separate from those tests.
 
 See [CI and manual review governance](ci.md) for the workflow, its isolated
 PostgreSQL test service, shared check script, and actual completion criteria.
-The workflow validates Compose, builds the ARM64 app image, checks formatting and
-compilation, applies fresh migrations, and runs all tests on GitHub. It does not
+The workflow validates default/alternate Compose ports, builds both ARM64 image
+targets, checks formatting/compilation, applies fresh migrations, runs all tests,
+and independently verifies live jobs using the final runtime image. It does not
 connect to this laptop or import development data. It uses the account's Actions
 minutes; no upgrade or spending-setting change is made.
 
-After rebuilding the app image, `sh scripts/test-database.sh --ci` runs the shared
+`sh scripts/test-database.sh --ci` builds the checks image and runs the shared
 locked-dependency / formatting / compile / migration / test checks locally against
 `gym_intel_test`. The no-argument test command remains available. Local tests may
 reuse the test database; GitHub's job applies migrations to a fresh database.
+
+## Verify the finished runtime package
+
+After starting PostgreSQL and building both images:
+
+```bash
+docker compose build app
+sh scripts/test-database.sh --ci
+sh scripts/verify-compose.sh
+sh scripts/verify-release.sh
+```
+
+`verify-compose.sh` renders and checks both port configurations without changing
+running services. `verify-release.sh` uses the final runtime image, not the
+checks image, for all application operations. It creates a uniquely named
+`gym_intel_release_test_<run>` database and separate temporary migrator/runtime
+accounts on the existing PostgreSQL server. It refuses to reuse development as
+its test database; names are generated internally. Only the short-lived psql
+client receives owner credentials; runtime workers receive only their temporary
+runtime credential. It checks non-root execution, no Mix CLI, missing-secret
+failure, all packaged migrations (including external SQL), invalid-input
+rejection, real supervised Oban execution, duplicate-file handling, exact
+synthetic facts and graceful shutdown. The fixture is not official gym data.
+
+Expected: two completed jobs, one observation, one note and one fingerprint,
+followed by a PASS line and successful cleanup. The test removes only its own
+temporary worker/database/accounts/files; this is not recoverable test evidence
+storage. Development rows and named volumes are never reset or deleted. A
+failed check exits nonzero. If cleanup fails, investigate the reported resource
+instead of issuing a broad database/volume deletion. Normal three-service setup
+remains unchanged after the check.
+
+For CI, `RELEASE_IMAGE` selects the built runtime tag;
+`RELEASE_TEST_OWNER_PASSWORD_FILE`, `RELEASE_TEST_NETWORK=host` and
+`RELEASE_TEST_HOST=127.0.0.1` point only at the disposable CI PostgreSQL service.
+Local defaults use the current Compose PostgreSQL network and private owner
+password file. A host Docker operator remains privileged; this is not production
+deployment, a universal portability guarantee or a backup/restore test.
 
 Our merge rule is manual: inspect a successful check for the latest reviewed
 commit before merging. The private repository does not have an enforced required

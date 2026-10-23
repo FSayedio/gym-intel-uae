@@ -4,8 +4,8 @@ set -eu
 for secret_name in postgres_app_password postgres_migrator_password grafana_database_password; do
   test -s "/run/secrets/$secret_name"
 done
-sh /opt/gym-intel/psql.sh --file=/opt/gym-intel/database_roles.sql
-sh /opt/gym-intel/psql.sh --file=/opt/gym-intel/grafana_reader.sql
+sh /opt/gym-intel/psql.sh --file=/opt/gym-intel-priv/database_roles.sql
+sh /opt/gym-intel/psql.sh --file=/opt/gym-intel-priv/grafana_reader.sql
 for database_role in gym_intel_app gym_intel_migrator gym_intel_grafana; do
   case "$database_role" in
     gym_intel_app) secret_file=/run/secrets/postgres_app_password ;;

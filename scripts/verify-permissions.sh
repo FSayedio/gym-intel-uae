@@ -53,7 +53,7 @@ DROP TABLE public.gym_intel_permission_probe;
 ROLLBACK;'
 printf 'PASS: migrator can change tables; probe rolled back\n'
 
-docker compose exec -T app sh -c '
+docker compose exec -T app sh -ec '
   test ! -e /run/secrets/postgres_password
   test ! -e /run/secrets/postgres_migrator_password
   test -s /run/secrets/postgres_app_password'

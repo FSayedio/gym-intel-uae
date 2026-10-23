@@ -1,5 +1,61 @@
 # Pricing MVP — reviewer handoff
 
+## Latest runtime/portability checkpoint — 23 October 2026
+
+Feature 6 is implemented on `codex/runtime-portability`, based on merged main
+`5b605dc4f0431b064c44e2d33b81e48dd6d01d3b`. This section supersedes earlier
+Mix-based runtime commands; use [Local development](local_development.md).
+At this implementation checkpoint no Feature 6 commit, push, PR, remote CI
+result or merge is claimed yet. Inspect Git/GitHub for later delivery status.
+
+- **Before:** one root-default image contained both build tools and the running
+  app; operators used Mix for migrations/imports, and host ports were fixed.
+- **Action:** separate checks/builder/runtime stages; package an Elixir release
+  with its VM and required Alpine libraries; run as UID/GID 10001 with root-owned
+  app files; provide explicit migration/import helpers; keep owner/migrator
+  credentials out of the running app. Disable Erlang distribution and allow
+  20 seconds for app shutdown. Add configurable localhost host ports, preserving
+  internal connections, project name and named volumes.
+- **After:** `sh scripts/import-csv.sh data/memberships.csv` submits a bounded CSV
+  snapshot and reports a job ID, not an unverified success claim. A user may set
+  `GRAFANA_HOST_PORT=3001` without changing `postgres:5432` or port 3000 inside
+  Grafana. Normal app startup does not migrate automatically. Runtime contains
+  packaged migration resources, but no Mix/Hex/Rebar build CLI/full source tree.
+- **Evidence:** the full isolated source suite reported **121 passed**, seed
+  `466891`, including shell-wrapper argument/path handling and failure-status
+  propagation. Application compilation uses warnings-as-errors; formatting and
+  locked dependencies are checked separately. Local runtime smoke checks applied
+  all six migrations using the final image and a temporary migrator credential,
+  rejected missing credentials/invalid CSV, then ran two real supervised Oban
+  jobs with a temporary runtime credential. Both completed on attempt one with
+  no errors; one exact synthetic observation, note and file marker remained.
+  Graceful shutdown returned zero. Its temporary worker, DB, roles and files
+  were removed; no development test jobs were submitted.
+- **Mount issue found/fixed:** the actual development migration helper applied
+  zero migrations but initially failed its grant refresh because tracked SQL
+  files had been replaced on the host while PostgreSQL retained deleted-file
+  binds. With explicit learner approval, configuration/SQL were changed to two
+  read-only directory mounts. A private logical backup was created outside Git
+  and its archive list validated; PostgreSQL was recreated with the identical
+  named data volume. Original observation/note/import checksums were unchanged,
+  six observations/four brands remained, and the complete migration/grant helper
+  then passed. App resumed as UID 10001; Grafana datasource health reported OK.
+  No data volume was reset or deleted, and no new migrations/gym records were
+  introduced in Feature 6.
+- **CI extension:** the existing ARM64 job builds both targets, verifies rendered
+  default/alternate port configurations (including directory-mount guards), runs
+  the source suite in `checks`, and independently runs the final-image live-job
+  smoke test against a separate generated database on disposable PostgreSQL.
+  The usual latest-revision green check and learner merge review still apply.
+- **Limits:** ARM64 Docker only, not Kubernetes, x86, registry publication,
+  universal fresh-machine reproduction or full hosted Grafana/visual testing.
+  A small runtime/non-root account is not a vulnerability clearance or protection
+  against Docker's administrator. Base/package tags are not fully digest-pinned.
+  The Decimal advisory and upstream Ecto deprecation warning remain. Backup
+  restore and in-flight power-loss/load scenarios were not tested here. Failed
+  or interrupted cleanup may require scoped operator attention; never substitute
+  broad database/volume deletion. Credential mounts remain individual files.
+
 ## Latest integrity checkpoint — 23 October 2026
 
 Feature 5 is implemented on `codex/observation-integrity`, based on main at

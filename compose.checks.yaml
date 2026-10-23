@@ -1,0 +1,8 @@
+# Ephemeral test override; no additional long-running service.
+services:
+  app:
+    image: gym-intel-checks:local
+    build:
+      target: checks
+    environment:
+      MIX_ENV: test
