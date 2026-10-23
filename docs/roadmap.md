@@ -79,6 +79,12 @@ storage, scheduling, actual restore-to-live procedures, Grafana/credential
 recovery, broader time-based job policies and monitoring remain separate work; this is not completion
 of the operational-recovery/visibility milestone.
 
+The [private status feature](update_status.md) adds read-only saved stage evidence
+and automatic two-report retention. It distinguishes uncertain commits and late
+housekeeping failures, not fresh system health. Alerting, metrics, off-device
+recovery, abrupt real-host interruption drills and dependency follow-ups remain
+open; saved summaries do not close the entire operations milestone.
+
 ## Kubernetes is a later deployment milestone
 
 Kubernetes replaces Compose's coordination role for that deployment, not the

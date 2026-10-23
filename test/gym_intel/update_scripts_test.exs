@@ -8,11 +8,14 @@ defmodule GymIntel.UpdateScriptsTest do
     project = Path.join(directory, "project")
     root = Path.join(directory, "backups")
     File.mkdir_p!(Path.join(project, "scripts/recovery"))
+    File.mkdir_p!(Path.join(project, "scripts/status"))
     File.mkdir_p!(Path.join(project, "data"))
     File.mkdir!(root)
     File.chmod!(root, 0o700)
     File.cp!("scripts/update-dashboard.sh", Path.join(project, "scripts/update-dashboard.sh"))
     File.cp!("scripts/recovery/common.sh", Path.join(project, "scripts/recovery/common.sh"))
+    File.cp!("scripts/status/common.sh", Path.join(project, "scripts/status/common.sh"))
+    File.cp!("scripts/update-status.sh", Path.join(project, "scripts/update-status.sh"))
     File.write!(Path.join(project, "data/test.csv"), "TEST INPUT NEVER PRINTED")
 
     bundle = Path.join(root, "backup-20000101T000000Z-ABCDEF")
@@ -77,11 +80,17 @@ defmodule GymIntel.UpdateScriptsTest do
       *'SELECT count(*)'*) echo "${FAKE_PENDING:-0}" ;;
       *GymIntel.Release.update*)
         echo import >> "$FAKE_ACTIONS"
+        if test "${FAKE_NOT_QUEUED:-0}" = 1; then echo UPDATE_NOT_QUEUED; exit 19; fi
+        printf 'UPDATE_QUEUED 42 %064d\\n' 1
+        if test "${FAKE_KILL_PARENT:-0}" = 1; then kill -KILL "$PPID"; exit 0; fi
         test "${FAKE_IMPORT_FAIL:-0}" = 0 || exit 19
         printf 'UPDATE_VERIFIED 42 %064d\\n' 1 ;;
       *'update_cleanup.sql -f -')
         cat >/dev/null
         echo cleanup >> "$FAKE_ACTIONS"
+        if test "${FAKE_HOUSEKEEPING_FAIL:-0}" = 1; then
+          printf 'TEST UNEXPECTED FILE' > "$FAKE_ROOT/.update.lock/unexpected"
+        fi
         exit "${FAKE_CLEANUP_FAIL:-0}" ;;
       *update_state.sql*) printf '%s\\n' "${FAKE_STATE_OVERRIDE:-$FAKE_STATE}" ;;
       *) echo 'Unexpected synthetic command' >&2; exit 99 ;;
@@ -95,7 +104,8 @@ defmodule GymIntel.UpdateScriptsTest do
       {"PATH", directory <> ":" <> System.fetch_env!("PATH")},
       {"FAKE_ACTIONS", Path.join(directory, "actions")},
       {"FAKE_BUNDLE", bundle},
-      {"FAKE_STATE", state_sha}
+      {"FAKE_STATE", state_sha},
+      {"FAKE_ROOT", root}
     ]
 
     %{directory: directory, project: project, root: root, env: env, bundle: bundle}
@@ -122,6 +132,19 @@ defmodule GymIntel.UpdateScriptsTest do
     end
   end
 
+  defp reports(context) do
+    Path.wildcard(Path.join(context.root, "update-reports/report-*.txt")) |> Enum.sort()
+  end
+
+  defp status(context) do
+    System.cmd(
+      "sh",
+      [Path.join(context.project, "scripts/update-status.sh"), "--directory", context.root],
+      env: context.env,
+      stderr_to_stdout: true
+    )
+  end
+
   test "success orders import, verified backup and cleanup", context do
     {output, 0} = run_update(context)
     assert actions(context) == ["import", "backup", "cleanup"]
@@ -129,6 +152,11 @@ defmodule GymIntel.UpdateScriptsTest do
     refute output =~ "TEST INPUT NEVER PRINTED"
     refute File.exists?(Path.join(context.root, ".update.lock"))
     assert File.dir?(context.bundle)
+    {report, 0} = status(context)
+    assert report =~ "Outcome: succeeded"
+    assert report =~ "Lock housekeeping: confirmed"
+    assert report =~ "Report retention: confirmed"
+    refute report =~ "TEST INPUT NEVER PRINTED"
   end
 
   test "failed backup withholds cleanup and retains prior backup", context do
@@ -138,6 +166,10 @@ defmodule GymIntel.UpdateScriptsTest do
     assert actions(context) == ["import", "backup"]
     assert File.dir?(context.bundle)
     refute File.exists?(Path.join(context.root, ".update.lock"))
+    {report, 0} = status(context)
+    assert report =~ "Import commit: confirmed"
+    assert report =~ "Backup verification: unknown"
+    assert report =~ "Data/job cleanup commit: not_attempted"
   end
 
   test "a verified backup of different state cannot permit database cleanup", context do
@@ -174,6 +206,9 @@ defmodule GymIntel.UpdateScriptsTest do
     assert output =~ "current-data-and-job-cleanup"
     refute output =~ "PASS: import committed"
     assert File.dir?(context.bundle)
+    {report, 0} = status(context)
+    assert report =~ "Backup verification: confirmed"
+    assert report =~ "Data/job cleanup commit: unknown"
   end
 
   test "invalid paths are refused before any import" do
@@ -183,5 +218,169 @@ defmodule GymIntel.UpdateScriptsTest do
 
       assert status != 0
     end
+  end
+
+  test "three finished attempts automatically retain two reports, including failures", context do
+    assert {_output, 0} = run_update(context)
+    first = hd(reports(context))
+    assert {_output, 19} = run_update(context, [{"FAKE_IMPORT_FAIL", "1"}])
+    assert length(reports(context)) == 2
+    assert {_output, 0} = run_update(context)
+    refute File.exists?(first)
+    assert length(reports(context)) == 2
+    {report, 0} = status(context)
+    assert report =~ "Outcome: failed"
+    assert report =~ "Outcome: succeeded"
+    assert report =~ "Job ID: 42"
+    assert report =~ "Exit code: 19"
+
+    assert Enum.all?(reports(context), fn path ->
+             Bitwise.band(File.stat!(path).mode, 0o777) == 0o600
+           end)
+  end
+
+  test "a failed report replacement preserves existing summaries and never imports", context do
+    assert {_output, 0} = run_update(context)
+    assert {_output, 0} = run_update(context)
+    before = Map.new(reports(context), &{&1, File.read!(&1)})
+    before_actions = actions(context)
+    mv = Path.join(context.directory, "mv")
+    File.write!(mv, "#!/bin/sh\nexit 73\n")
+    File.chmod!(mv, 0o755)
+    {output, exit_status} = run_update(context)
+    assert exit_status != 0
+    refute output =~ "PASS: import committed"
+    assert actions(context) == before_actions
+    assert Map.new(reports(context), &{&1, File.read!(&1)}) == before
+  end
+
+  test "housekeeping failure is reported after otherwise successful data operations", context do
+    {output, 1} = run_update(context, [{"FAKE_HOUSEKEEPING_FAIL", "1"}])
+    refute output =~ "PASS: import committed"
+    assert output =~ "housekeeping"
+    {report, 0} = status(context)
+    assert report =~ "Outcome: failed"
+    assert report =~ "Data/job cleanup commit: confirmed"
+    assert report =~ "Lock housekeeping: unknown"
+    assert File.dir?(Path.join(context.root, ".update.lock"))
+  end
+
+  test "late report storage failure cannot leave an acknowledged success", context do
+    assert {_output, 0} = run_update(context)
+    assert {_output, 0} = run_update(context)
+    mv = Path.join(context.directory, "mv")
+    counter = Path.join(context.directory, "move-count")
+
+    File.write!(mv, """
+    #!/bin/sh
+    count=0
+    test ! -f "$FAKE_MV_COUNTER" || count=$(cat "$FAKE_MV_COUNTER")
+    count=$((count + 1))
+    printf '%s\\n' "$count" > "$FAKE_MV_COUNTER"
+    test "$count" -lt 8 || exit 73
+    exec /bin/mv "$@"
+    """)
+
+    File.chmod!(mv, 0o755)
+    {output, exit_status} = run_update(context, [{"FAKE_MV_COUNTER", counter}])
+    assert exit_status != 0
+    refute output =~ "PASS: import committed"
+    assert output =~ "report-retention"
+    latest = reports(context) |> List.last() |> File.read!()
+    refute latest =~ "outcome=succeeded"
+    assert latest =~ "data_cleanup=confirmed"
+    assert latest =~ "exit_code=unknown"
+    assert length(reports(context)) == 2
+  end
+
+  test "SIGKILL leaves an unknown active report protected beside two finished reports", context do
+    assert {_output, 0} = run_update(context)
+    assert {_output, 0} = run_update(context)
+    {_output, exit_status} = run_update(context, [{"FAKE_KILL_PARENT", "1"}])
+    assert exit_status != 0
+    assert length(reports(context)) == 3
+    before = Map.new(reports(context), &{&1, File.read!(&1)})
+    {report, 0} = status(context)
+    assert report =~ "in_progress_or_interrupted"
+    assert report =~ "Import commit: unknown"
+    assert report =~ "does not prove the process is still running"
+    {_output, exit_status} = run_update(context)
+    assert exit_status != 0
+    assert Map.new(reports(context), &{&1, File.read!(&1)}) == before
+  end
+
+  test "reader never creates a missing root or invokes Docker", context do
+    missing = Path.join(context.directory, "never-created")
+
+    {report, 0} =
+      System.cmd("sh", [
+        Path.join(context.project, "scripts/update-status.sh"),
+        "--directory",
+        missing
+      ])
+
+    assert report =~ "No saved update reports"
+    refute File.exists?(missing)
+    assert actions(context) == []
+  end
+
+  test "malformed or oversized receipts are not displayed or executed", context do
+    assert {_output, 0} = run_update(context)
+    path = hd(reports(context))
+    marker = Path.join(context.directory, "MUST_NOT_EXIST")
+    File.write!(path, "$(touch #{marker})\nTEST PRIVATE CONTENT\n")
+    {output, exit_status} = status(context)
+    assert exit_status != 0
+    refute output =~ "TEST PRIVATE CONTENT"
+    refute File.exists?(marker)
+    File.write!(path, String.duplicate("x", 2049))
+    {_output, exit_status} = status(context)
+    assert exit_status != 0
+  end
+
+  test "unexpected files stop report pruning without deleting old records", context do
+    assert {_output, 0} = run_update(context)
+    assert {_output, 0} = run_update(context)
+    before = Map.new(reports(context), &{&1, File.read!(&1)})
+    protected = Path.join(context.root, "update-reports/keep-me.txt")
+    File.write!(protected, "TEST UNRELATED")
+    {_output, exit_status} = run_update(context)
+    assert exit_status != 0
+    assert Map.new(reports(context), &{&1, File.read!(&1)}) == before
+    assert File.read!(protected) == "TEST UNRELATED"
+  end
+
+  test "public permissions and symlink receipts are rejected", context do
+    assert {_output, 0} = run_update(context)
+    path = hd(reports(context))
+    File.chmod!(path, 0o644)
+    {_output, exit_status} = status(context)
+    assert exit_status != 0
+    File.chmod!(path, 0o600)
+    outside = Path.join(context.directory, "protected-report")
+    File.rename!(path, outside)
+    File.ln_s!(outside, path)
+    {_output, exit_status} = status(context)
+    assert exit_status != 0
+    assert File.exists?(outside)
+  end
+
+  test "known rejection before queueing is distinct from an uncertain import", context do
+    {_output, 19} = run_update(context, [{"FAKE_NOT_QUEUED", "1"}])
+    {report, 0} = status(context)
+    assert report =~ "Import commit: not_attempted"
+    assert report =~ "Job ID: unknown"
+    assert report =~ "Backup verification: not_attempted"
+    assert report =~ "this attempt did not queue a job"
+  end
+
+  test "a contradictory success summary is rejected rather than giving false reassurance",
+       context do
+    assert {_output, 0} = run_update(context)
+    path = hd(reports(context))
+    File.write!(path, String.replace(File.read!(path), "import=confirmed", "import=unknown"))
+    {report, exit_status} = status(context)
+    assert exit_status != 0
+    refute report =~ "Outcome: succeeded"
   end
 end

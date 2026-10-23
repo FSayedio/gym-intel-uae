@@ -24,6 +24,7 @@ operational recovery and eventual Kubernetes deployment remain on the
 - [Operator runbook: setup, import, verify, diagnose and stop](docs/operator_runbook.md)
 - [Database backup, isolated restore verification and retention](docs/database_recovery.md)
 - [One-command dashboard update and rolling-two lifecycle](docs/update_lifecycle.md)
+- [Read-only update status and automatic two-report retention](docs/update_status.md)
 - [Detailed local configuration and credentials](docs/local_development.md)
 - [Data contract and source limitations](docs/data_contract.md)
 - [CI checks and manual review policy](docs/ci.md)

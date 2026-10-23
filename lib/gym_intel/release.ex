@@ -61,11 +61,18 @@ defmodule GymIntel.Release do
       case %{"csv" => contents}
            |> GymIntel.Workers.ImportMemberships.new(tags: ["dashboard-update"])
            |> Oban.insert() do
-        {:ok, job} -> wait_for_update(job.id, fingerprint, length(rows), 300)
-        {:error, _} -> update_failure("Import could not be queued")
+        {:ok, job} ->
+          IO.puts("UPDATE_QUEUED #{job.id} #{fingerprint}")
+          wait_for_update(job.id, fingerprint, length(rows), 300)
+
+        {:error, _} ->
+          IO.puts("UPDATE_NOT_QUEUED")
+          update_failure("Import could not be queued")
       end
     else
-      _ -> update_failure("Update requires a valid, nonempty CSV; nothing queued")
+      _ ->
+        IO.puts("UPDATE_NOT_QUEUED")
+        update_failure("Update requires a valid, nonempty CSV; nothing queued")
     end
   end
 
