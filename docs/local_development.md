@@ -391,6 +391,16 @@ files are skipped using the rules in `docs/data_contract.md`. A changed observat
 is retained, not used to overwrite history. Worker return counts are not persisted
 as an Oban result report.
 
+## Database recovery is a separate operator action
+
+Use [Database recovery](database_recovery.md) for the on-demand
+`sh scripts/backup-database.sh` command. It briefly pauses the app, captures the
+whole database into a private local folder, resumes the app, and verifies a
+restore in a separate network-disabled container before publishing the copy and
+applying seven-backup retention. It does not restore over development, schedule
+backups, copy credentials/Grafana state, or protect against losing this drive.
+Starting the three services does not automatically perform it.
+
 ## Repeatable tests
 
 Tests use `compose.checks.yaml`, an ephemeral override of the same `app` service,
