@@ -1,5 +1,10 @@
 # Operator runbook
 
+**Kubernetes is now the primary local deployment.** Use the
+[Kubernetes guide](kubernetes.md) and `sh scripts/k8s.sh ...` commands for that
+database. The commands below are the retained **Compose alternative**. Do not
+resume the old Compose rollback copy and mistake it for current Kubernetes data.
+
 For the local ARM64 Docker Compose stack. Run commands from the repository root
 with Docker Desktop running. This is the current everyday guide; use
 [Local development](local_development.md) for configuration details and the

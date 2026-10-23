@@ -13,10 +13,10 @@ ranking. Four recorded brands are not comprehensive or equally fresh UAE coverag
 More fields and code do not automatically establish comparability.
 
 Current boundary: local manual CSV -> Elixir/Oban -> PostgreSQL -> Grafana,
-exactly three long-running ARM64 Docker Compose services. No Phoenix, custom
-API/forms, scraping, Redis or Kubernetes implementation is authorized by this
-documentation PR. The original September iteration dates are historical, not a
-new promised deadline.
+three long-running ARM64 application workloads. The user explicitly authorised
+the full local Kubernetes migration in one PR; see [scope and evidence](kubernetes.md).
+No Phoenix, custom API/forms, scraping, Redis or cloud infrastructure is added.
+The original September iteration dates are historical, not a new promised deadline.
 
 ## Current milestone: foundation and reliability
 
@@ -94,7 +94,8 @@ account, leaving laptop-loss protection explicitly open. The local recovery
 extension reconstructs Git-managed Grafana with fresh credentials against a
 verified restored copy; no live cutover or recovery of untracked UI state is
 claimed. Independent-environment evidence must be verified, not inferred from
-documentation. Kubernetes remains a later milestone.
+documentation. That operational-readiness work merged in PR #20; the current
+authorised Kubernetes PR follows it.
 
 Local working-tree verification for all three areas is recorded in
 [CI and rehearsal evidence](ci.md#local-measurement-evidence-23-october-2026):
@@ -103,17 +104,26 @@ workload and deliberate recovery of an interrupted import. This is local evidenc
 not a merged delivery or hosted-CI result. Abrupt-job recovery remains an explicit
 operator action; no automatic orphan-rescue policy was introduced.
 
-## Kubernetes is a later deployment milestone
+## Kubernetes deployment milestone — authorised and implemented in this PR
 
-Kubernetes replaces Compose's coordination role for that deployment, not the
-containers themselves. Compose can remain the simple local workflow. Feature 6
-prepares a runtime artifact but supplies no manifests, cluster, registry, failover
-or production-readiness guarantee.
+The target is a local single-node ARM64 Kind cluster, with existing data restored
+and compared, scoped Secrets, persistent claims, explicit migration Jobs,
+loopback Grafana access and the same update/backup/retention workflow. See the
+[complete before/action/after table](kubernetes.md#changes-reasons-and-examples).
+The PR's acceptance/CI results establish delivery; this is not cloud production,
+high availability or off-device disaster recovery. The prerequisite list below
+is retained as the reasoning checklist, now answered by that guide.
 
-Settle these prerequisites with the learner before implementation:
+Kubernetes replaces Compose's coordination role, not the containers themselves.
+Compose remains a separate development/recovery option. Feature 6 supplied the
+runtime artifact; this migration adds manifests, cluster preparation and verified
+local operation, not cloud failover or a production-readiness guarantee.
+
+The original prerequisite checklist below is now answered in the migration guide:
 
 1. **Target/budget:** local learning cluster versus hosted deployment;
-   architecture, machine headroom, costs and exposure. No provider chosen yet.
+   architecture, machine headroom, costs and exposure. Selected: local ARM64 Kind,
+   loopback access, no cloud provider or global settings change.
 2. **Image delivery:** how the cluster receives a tested immutable image.
    Local `gym-intel-runtime:local` alone is not a registry delivery system.
 3. **Data ownership:** cluster PostgreSQL versus an external service; persistent

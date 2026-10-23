@@ -4,3 +4,4 @@ deps
 .env
 .env.*
 .secrets
+.local

@@ -1,5 +1,10 @@
 # Private update status and automatic report retention
 
+Kubernetes stores its reports separately. For offline, read-only evidence use
+`sh scripts/update-status.sh --directory "$HOME/Library/Application Support/Gym Intel UAE/kubernetes-backups"`.
+`sh scripts/k8s.sh status` additionally queries the running cluster. The saved
+report format and retention below are shared across both deployments.
+
 ## What, why and how
 
 Before: the update command printed progress, then removed its temporary submission

@@ -21,6 +21,7 @@ RUN apk add --no-cache openssl
 COPY .formatter.exs ./
 COPY test ./test
 COPY scripts ./scripts
+COPY kubernetes ./kubernetes
 COPY data ./data
 COPY grafana ./grafana
 RUN mix deps.get --check-locked && mix compile --warnings-as-errors

@@ -7,6 +7,11 @@ project_dir="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$project_dir"
 . "$project_dir/scripts/recovery/common.sh"
 . "$project_dir/scripts/status/common.sh"
+case "${GYM_INTEL_BACKEND:-compose}" in
+  compose) ;;
+  kubernetes) . "$project_dir/scripts/kubernetes/common.sh"; kube_guard ;;
+  *) echo 'Unknown execution backend' >&2; exit 2 ;;
+esac
 case "$#" in
   1) backup_root="$HOME/Library/Application Support/Gym Intel UAE/backups" ;;
   3) test "$2" = --directory || { echo 'Usage: sh scripts/update-dashboard.sh data/file.csv [--directory /absolute/private/path]' >&2; exit 2; }
@@ -116,6 +121,11 @@ openssl rand -hex 32 > "$backup_root/.update.lock/token"
 GYM_INTEL_UPDATE_TOKEN=$(cat "$backup_root/.update.lock/token")
 export GYM_INTEL_UPDATE_TOKEN
 test ! -e "$backup_root/.backup.lock" || { recovery_fail 'Capture or stale backup lock exists'; exit 1; }
+if [ "${GYM_INTEL_BACKEND:-compose}" = kubernetes ]; then
+  test "$(kube get deployment app -o 'jsonpath={.spec.replicas}')" = 1
+  kube rollout status deployment/app --timeout=120s >/dev/null
+  source_psql() { kube_psql "$@"; }
+else
 update_postgres=$(docker compose ps -q postgres)
 test -n "$update_postgres"
 update_project=${RECOVERY_FIXTURE_PROJECT:-gym-intel-uae}
@@ -128,6 +138,7 @@ update_app=$(docker compose ps -q app)
 test -n "$update_app"
 test "$(docker inspect --format '{{.State.Running}}' "$update_app")" = true
 source_psql() { docker exec -i "$update_postgres" sh /opt/gym-intel/psql.sh "$@"; }
+fi
 test "$(source_psql -qAtc 'SELECT current_database()')" = gym_intel_dev
 test "$(source_psql -qAtc "SELECT count(*) FROM public.oban_jobs WHERE state IN ('available','scheduled','executing','retryable')")" = 0 || {
   recovery_fail 'Unfinished jobs exist; finish or investigate them before updating'; exit 1;
@@ -139,8 +150,15 @@ status_write
 echo 'Submitting one verified CSV and waiting for its exact job and committed fingerprint'
 # This one-off process must EXIT before backup: no extra Repo/Oban peer is
 # left running while the backup pauses only the long-running Compose app.
-if docker compose run --rm --no-deps -e "IMPORT_CSV_PATH=/app/$1" \
-  app bin/gym_intel eval 'GymIntel.Release.update()' \
+update_submit() {
+  if [ "${GYM_INTEL_BACKEND:-compose}" = kubernetes ]; then
+    sh scripts/kubernetes/task.sh update "$1"
+  else
+    docker compose run --rm --no-deps -e "IMPORT_CSV_PATH=/app/$1" \
+      app bin/gym_intel eval 'GymIntel.Release.update()'
+  fi
+}
+if update_submit "$1" \
   > "$backup_root/.update.lock/submission.log" 2>&1; then
   :
 else

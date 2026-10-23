@@ -1,5 +1,11 @@
 # Local PostgreSQL backup and restore verification
 
+For the active Kubernetes deployment, use `sh scripts/k8s.sh backup` and the
+[Kubernetes restore guide](kubernetes.md). Its private `kubernetes-backups`
+directory is separate from Compose's rollback archives. The verification format
+and rolling-two policy below are shared; bare Compose commands target only the
+retained Compose alternative.
+
 ## Outcome, scope and components
 
 Before: the database lived in its Docker volume; earlier upgrade archives were

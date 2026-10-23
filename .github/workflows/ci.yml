@@ -14,6 +14,34 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  kubernetes:
+    name: Kubernetes acceptance (ARM64)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    steps:
+      - name: Check out this revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7, pinned
+        with:
+          persist-credentials: false
+      - name: Install checksum-verified project-local kubectl
+        shell: bash
+        run: |
+          mkdir -p .local/kubernetes/bin
+          curl --fail --location --silent --show-error https://dl.k8s.io/release/v1.36.4/bin/linux/arm64/kubectl -o .local/kubernetes/bin/kubectl
+          curl --fail --location --silent --show-error https://dl.k8s.io/release/v1.36.4/bin/linux/arm64/kubectl.sha256 -o .local/kubernetes/bin/kubectl.sha256
+          printf '%s  %s\n' "$(cat .local/kubernetes/bin/kubectl.sha256)" .local/kubernetes/bin/kubectl | sha256sum --check
+          chmod 700 .local/kubernetes/bin/kubectl
+          echo "$GITHUB_WORKSPACE/.local/kubernetes/bin" >> "$GITHUB_PATH"
+      - name: Create isolated local cluster and verify full update lifecycle
+        run: |
+          sh scripts/k8s.sh bootstrap
+          sh scripts/verify-kubernetes.sh
+      - name: Cluster diagnostics on failure (no Secrets or CSV arguments)
+        if: failure()
+        run: |
+          kubectl --kubeconfig .local/kubernetes/kubeconfig --context kind-gym-intel get nodes,pods --all-namespaces || true
+          kubectl --kubeconfig .local/kubernetes/kubeconfig --context kind-gym-intel get events --all-namespaces --sort-by=.lastTimestamp || true
+
   quality:
     name: CI checks (ARM64)
     runs-on: ubuntu-24.04-arm

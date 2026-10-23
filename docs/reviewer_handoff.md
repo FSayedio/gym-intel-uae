@@ -1,5 +1,21 @@
 # Current reviewer handoff
 
+## Kubernetes migration checkpoint — 23 October 2026
+
+Start with [the migration change table and operator guide](kubernetes.md).
+This PR migrates the existing data and dashboard to a local ARM64 Kind cluster,
+preserving scoped roles, manual updates and rolling-two lifecycle. No new gym
+records or dashboard calculations are introduced. The older evidence below is
+historical; use this PR's CI and migration verification for the new deployment.
+
+The source and restored target initially matched exactly, including rows,
+schema, roles, sequences and jobs. Both protected-state hashes were
+`59eea542a190807266b64bd05f17bac481425f3ef13ed926c70b32df6efc3f60`.
+The Kubernetes dashboard probe returned four offers and the actual permission
+checks passed. Compose containers/volumes are retained stopped as a rollback
+copy; Kubernetes is the active stack at port 3001. The final PR records the full
+test/acceptance results. Nothing here claims a cloud or highly available system.
+
 Updated 23 October 2026. Review this page first; the
 [historical checkpoints](reviewer_history.md) preserve earlier evidence and
 superseded designs, not current operating instructions.
@@ -35,10 +51,12 @@ Manually verified CSV -> Elixir validation -> durable Oban job
                     -> restricted public view -> Grafana
 ```
 
-Exactly three long-running ARM64 Docker Compose services: app, PostgreSQL and
-Grafana. Short-lived operator/test containers are separate from those services.
+Exactly three long-running ARM64 application services: app, PostgreSQL and
+Grafana. The current deployment is Kubernetes; the following dated Feature 6/7
+evidence describes the earlier Compose implementation. Short-lived operator/test
+containers are separate from those services.
 There is no automatic fetching, import schedule, scraping, custom web app or API.
-Kubernetes is a later deployment milestone, not part of this local delivery.
+The Kubernetes migration checkpoint above supersedes the earlier deployment boundary.
 
 ## Delivery and evidence baseline
 

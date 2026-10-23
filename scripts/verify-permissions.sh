@@ -3,11 +3,27 @@
 set -eu
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$project_dir"
+case "${GYM_INTEL_BACKEND:-compose}" in
+  compose) service_exec() { docker compose exec -T "$@"; } ;;
+  kubernetes)
+    . scripts/kubernetes/common.sh
+    kube_guard
+    service_exec() {
+      service=$1
+      shift
+      case "$service" in
+        postgres) kube exec postgres-0 -- "$@" ;;
+        app) kube exec deployment/app -- "$@" ;;
+        *) return 2 ;;
+      esac
+    } ;;
+  *) echo 'Unknown execution backend' >&2; exit 2 ;;
+esac
 
 expect_denied() {
   role="$1"
   statement="$2"
-  if output=$(docker compose exec -T postgres sh /opt/gym-intel/role-psql.sh "$role" \
+  if output=$(service_exec postgres sh /opt/gym-intel/role-psql.sh "$role" \
     --set=VERBOSITY=verbose \
     --command="BEGIN; $statement; ROLLBACK;" 2>&1); then
     printf 'FAIL: %s unexpectedly permitted: %s\n' "$role" "$statement"
@@ -41,11 +57,11 @@ expect_denied gym_intel_grafana 'SELECT content_sha256 FROM public.membership_im
 expect_denied gym_intel_grafana 'SET ROLE gym_intel_migrator'
 expect_denied gym_intel_grafana 'SET ROLE gym_intel'
 
-docker compose exec -T postgres sh /opt/gym-intel/role-psql.sh gym_intel_grafana \
+service_exec postgres sh /opt/gym-intel/role-psql.sh gym_intel_grafana \
   --command='SELECT count(*) AS public_observations FROM public.dashboard_memberships'
 printf 'PASS: Grafana can read the public view, not raw observations/note history\n'
 
-docker compose exec -T postgres sh /opt/gym-intel/role-psql.sh gym_intel_migrator --command='
+service_exec postgres sh /opt/gym-intel/role-psql.sh gym_intel_migrator --command='
 BEGIN;
 CREATE TABLE public.gym_intel_permission_probe (id integer);
 ALTER TABLE public.gym_intel_permission_probe ADD COLUMN checked boolean;
@@ -53,7 +69,7 @@ DROP TABLE public.gym_intel_permission_probe;
 ROLLBACK;'
 printf 'PASS: migrator can change tables; probe rolled back\n'
 
-docker compose exec -T app sh -ec '
+service_exec app sh -ec '
   test ! -e /run/secrets/postgres_password
   test ! -e /run/secrets/postgres_migrator_password
   test -s /run/secrets/postgres_app_password'
