@@ -1,5 +1,13 @@
 # Membership CSV data contract
 
+Current retention: the importer still validates/inserts atomically, but the
+[normal update lifecycle](update_lifecycle.md) subsequently removes superseded
+observation dates only after a verified backup. It preserves every row on the
+newest date per offer (including conflicts/unknowns), small dedupe markers and
+source notes for retained observations. Older sections describing separate
+observations explain import-time identity, not indefinite historical-price
+retention. Grafana rereads the database every 30 seconds; it does not fetch sources.
+
 ## Purpose
 
 `data/memberships.csv` records published UAE gym membership offers for comparison. Each row is one plan offer observed on one date, with a primary source and any supporting sources identified in notes. This CSV does not store branch footprint, opening hours, equipment, or facilities.
@@ -168,8 +176,9 @@ Adding the compact table does not alter the graph's price query or selection.
   separate checked/source or key-caveat columns.
 - Multiple offers for the same brand have branch and original plan appended to
   their labels; marketing names are never converted into invented equal tiers.
-- Historical observations remain in PostgreSQL and the original CSV. Removing
-  the on-dashboard history table does not delete them.
+- Panel layout alone does not delete observations. The explicit post-backup
+  [update lifecycle](update_lifecycle.md) removes older dates from PostgreSQL;
+  original CSV files and Git history are not rewritten.
 - No new data collection, import behaviour, permissions, migrations or services
   are required for this presentation change.
 

@@ -1,5 +1,11 @@
 # Observation identity and internal note history
 
+Retention boundary: this document describes append-only runtime imports and
+source-note integrity. The owner-invoked [update lifecycle](update_lifecycle.md)
+may remove older dated observations and their attached notes after a verified
+backup. Current observations retain their integrity/provenance. Runtime and
+Grafana permissions are not broadened; old migration rollback protections remain.
+
 ## Outcome and example
 
 Before: duplicate checking lived in the importer, required a whole-table write

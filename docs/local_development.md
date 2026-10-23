@@ -388,8 +388,9 @@ docker compose exec -T postgres sh /opt/gym-intel/psql.sh -c \
 A header-only file completes without adding memberships. Valid nonempty imports
 save atomically. Identical files are skipped; matching observations in different
 files are skipped using the rules in `docs/data_contract.md`. A changed observation
-is retained, not used to overwrite history. Worker return counts are not persisted
-as an Oban result report.
+is inserted rather than overwriting another row during import. The normal
+[update lifecycle](update_lifecycle.md) then removes superseded dates only after
+a verified backup. Worker return counts are not persisted as an Oban result report.
 
 ## Database recovery is a separate operator action
 
@@ -397,7 +398,9 @@ Use [Database recovery](database_recovery.md) for the on-demand
 `sh scripts/backup-database.sh` command. It briefly pauses the app, captures the
 whole database into a private local folder, resumes the app, and verifies a
 restore in a separate network-disabled container before publishing the copy and
-applying seven-backup retention. It does not restore over development, schedule
+applying two-backup retention. The [normal update command](update_lifecycle.md)
+also waits for committed input before backup and guarded cleanup of superseded
+observations/old finished jobs. It does not restore over development, schedule
 backups, copy credentials/Grafana state, or protect against losing this drive.
 Starting the three services does not automatically perform it.
 

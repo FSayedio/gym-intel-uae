@@ -68,6 +68,23 @@ or grant schema privileges merely to make that old command work.
 
 ## 3. Submit a verified CSV snapshot
 
+For normal updates, use the [one-command lifecycle](update_lifecycle.md):
+
+```bash
+sh scripts/update-dashboard.sh data/memberships-2026-10-22.csv
+```
+
+Supply your newly verified input, not repeated checked-in examples. This waits for
+the exact committed import, creates/restores a verified backup, keeps two copies,
+then transactionally removes superseded observation dates and old finished import
+jobs (keep two). Unfinished jobs block the run. Grafana rereads PostgreSQL every
+30 seconds while open; it does not fetch websites. Read the final phase/status:
+an import may succeed even when backup or cleanup fails. Old job IDs can expire;
+the small fingerprint markers remain. Pulling this code does not run cleanup.
+
+The commands below are the **low-level submit-only diagnostic path** and describe
+counts before lifecycle cleanup, not the normal update workflow.
+
 For the checked-in example data, run each command separately and verify the job
 before submitting the next. These commands **write** job/data state; do not run
 them merely to inspect a stack that is already populated.
@@ -194,7 +211,7 @@ The recorded Feature 5/6 upgrades included private backups, archive-list checks,
 volume identity and original-data checksums. They did **not** verify a restore.
 For the current on-demand backup and isolated restore workflow, use
 [Database recovery](database_recovery.md). It provides a verified local copy and
-seven-copy retention, not an automatic schedule or restore-to-live operation.
+two-copy retention, not an automatic schedule or restore-to-live operation.
 If live recovery is required, preserve evidence and obtain an explicitly reviewed
 target/recovery plan; do not overwrite development from an old recipe. A checked
 archive in `/tmp` is not durable disaster recovery, and a local copy is not

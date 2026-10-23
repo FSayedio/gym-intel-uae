@@ -16,7 +16,7 @@
   "timepicker": {
     "hidden": true
   },
-  "refresh": "",
+  "refresh": "30s",
   "panels": [
     {
       "id": 1,

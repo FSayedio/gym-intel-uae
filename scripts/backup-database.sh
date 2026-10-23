@@ -1,5 +1,5 @@
 #!/bin/sh
-# On-demand, quiescent PostgreSQL capture -> isolated restore -> seven verified copies.
+# Quiescent PostgreSQL capture -> isolated restore -> two verified copies.
 set -eu
 umask 077
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,6 +12,16 @@ case "$#" in
   *) echo 'Usage: sh scripts/backup-database.sh [--directory /absolute/private/path]' >&2; exit 2 ;;
 esac
 recovery_init_root
+if [ -e "$backup_root/.update.lock" ] || [ -L "$backup_root/.update.lock" ]; then
+  recovery_private_directory "$backup_root/.update.lock"
+  recovery_private_file "$backup_root/.update.lock/token"
+  test -n "${GYM_INTEL_UPDATE_TOKEN:-}" &&
+    test "$GYM_INTEL_UPDATE_TOKEN" = "$(cat "$backup_root/.update.lock/token")" || {
+      recovery_fail 'A dashboard update or stale update lock exists; capture refused'; exit 1;
+    }
+elif [ -n "${GYM_INTEL_UPDATE_TOKEN:-}" ]; then
+  recovery_fail 'Update coordination token has no matching private lock'; exit 1
+fi
 mkdir "$backup_root/.backup.lock" 2>/dev/null || {
   recovery_fail 'Another capture or stale lock exists; inspect it, do not remove it blindly'; exit 1;
 }
@@ -115,5 +125,9 @@ test ! -e "$capture_published"
 mv "$capture_pending" "$capture_published"
 capture_pending=''
 recovery_prune "$capture_published"
+if [ -n "${GYM_INTEL_UPDATE_TOKEN:-}" ]; then
+  test "$GYM_INTEL_UPDATE_TOKEN" = "$(cat "$backup_root/.update.lock/token")"
+  printf '%s\n' "$capture_published" > "$backup_root/.update.lock/backup"
+fi
 printf 'PASS: verified database backup: %s\n' "$capture_published"
-printf 'Retention: latest seven verified backups; local-only, not separately encrypted.\n'
+printf 'Retention: latest two verified backups; local-only, not separately encrypted.\n'

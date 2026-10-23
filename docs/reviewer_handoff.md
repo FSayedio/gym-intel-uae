@@ -162,9 +162,11 @@ blockers from optional improvements. Do not merge as part of the review.
 ## Limits that must remain visible
 
 The recovery feature adds on-demand private PostgreSQL backups, isolated restore
-verification and seven-copy retention. It does not deliver off-device recovery,
+verification and two-copy retention. The [update lifecycle](update_lifecycle.md)
+connects import verification, backups, current-only observations and two finished
+import-job retention. Review its failure boundaries separately. It does not deliver off-device recovery,
 an automatic schedule, restore over development, or Grafana/credential recovery.
-Job pruning, abrupt-interruption recovery drills, multi-app load assessment,
+Age-based/general job pruning, abrupt-interruption recovery drills, multi-app load assessment,
 fully independent clean-machine reproduction and automated browser regression
 remain open. The runtime smoke test is not all of those; only PostgreSQL currently
 has a Compose healthcheck.

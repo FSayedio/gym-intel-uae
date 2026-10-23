@@ -39,6 +39,8 @@ services:
       DATABASE_PASSWORD_FILE: /run/secrets/postgres_app_password
     secrets:
       - postgres_app_password
+    volumes:
+      - ${RECOVERY_FIXTURE_DATA_DIR:?}:/app/data:ro
     depends_on:
       postgres:
         condition: service_healthy
