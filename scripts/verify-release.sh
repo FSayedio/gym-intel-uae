@@ -6,6 +6,16 @@ project_dir="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$project_dir"
 umask 077
 
+readiness_mode=false
+case "$#:${1:-}" in
+  0:) ;;
+  1:--readiness) readiness_mode=true ;;
+  *) echo 'Usage: sh scripts/verify-release.sh [--readiness]' >&2; exit 2 ;;
+esac
+if [ "$readiness_mode" = true ] && [ -z "${READINESS_RUN:-}" ]; then
+  echo 'Readiness mode requires the isolated verify-readiness.sh wrapper' >&2
+  exit 2
+fi
 runtime_image="${RELEASE_IMAGE:-gym-intel-runtime:local}"
 owner_file="${RELEASE_TEST_OWNER_PASSWORD_FILE:-$project_dir/.secrets/postgres_password}"
 test -s "$owner_file"
@@ -24,22 +34,31 @@ else
   test -n "$test_network"
   test "$(printf '%s\n' "$test_network" | wc -l | tr -d ' ')" = 1
 fi
+if [ "$readiness_mode" = true ]; then
+  test "$(docker network inspect --format '{{.Internal}} {{index .Labels "com.gym-intel.readiness"}}' "$test_network")" = "true $READINESS_RUN" || {
+    echo 'Readiness mode requires its labelled internal test network' >&2; exit 1;
+  }
+fi
 
 test_tmp="$(mktemp -d "${TMPDIR:-/tmp}/gym-intel-release.XXXXXX")"
 run_id="$(date +%s)_$$"
 test_database="gym_intel_release_test_$run_id"
 migrator_role="release_migrator_$run_id"
 runtime_role="release_app_$run_id"
+reader_role="release_reader_$run_id"
 runtime_container="gym-intel-release-$run_id"
 database_created=false
 migrator_created=false
 runtime_role_created=false
+reader_created=false
 container_started=false
+readiness_holder=''
 
 psql_owner() {
   docker run --rm -i --platform linux/arm64 --network "$test_network" \
+    --memory 128m --cpus 0.25 --pids-limit 64 \
     -e "PGHOST=$test_host" -e "PGPORT=$test_port" \
-    -e "PGUSER=$owner_user" -e PGDATABASE=postgres \
+    -e "PGUSER=$owner_user" -e PGDATABASE=postgres -e PGCONNECT_TIMEOUT=3 \
     -v "$owner_file:/run/secrets/client_password:ro" \
     "$client_image" sh -c '
       export PGPASSWORD="$(cat /run/secrets/client_password)"
@@ -50,6 +69,20 @@ psql_owner() {
 cleanup() {
   status=$?
   trap - EXIT HUP INT TERM
+  if [ "$status" -ne 0 ] && [ "$readiness_mode" = true ]; then
+    printf 'FAIL: readiness phase=%s\n' "${readiness_phase:-release-smoke}" >&2
+    if [ "$database_created" = true ]; then
+      psql_owner --dbname="$test_database" -c 'SELECT id,state,attempt,cardinality(errors) AS error_count FROM oban_jobs ORDER BY id' || true
+      psql_owner --dbname="$test_database" -c "SELECT usename,application_name,state,wait_event_type,wait_event FROM pg_stat_activity WHERE datname=current_database()" || true
+    fi
+  fi
+  if [ -n "$readiness_holder" ]; then
+    if [ "$(docker inspect --format '{{index .Config.Labels "com.gym-intel.release-fixture"}}' "$readiness_holder" 2>/dev/null)" = "$run_id" ]; then
+      docker rm -f "$readiness_holder" >/dev/null 2>&1 || status=1
+    else
+      status=1
+    fi
+  fi
   if [ "$container_started" = true ]; then
     docker rm -f "$runtime_container" >/dev/null 2>&1 || status=1
   fi
@@ -60,12 +93,17 @@ cleanup() {
   if [ "$runtime_role_created" = true ]; then
     psql_owner -c "DROP ROLE \"$runtime_role\"" >/dev/null || status=1
   fi
+  if [ "$reader_created" = true ]; then
+    psql_owner -c "DROP ROLE \"$reader_role\"" >/dev/null || status=1
+  fi
   if [ "$migrator_created" = true ]; then
     psql_owner -c "DROP ROLE \"$migrator_role\"" >/dev/null || status=1
   fi
   # Exact generated files only; preserve unexpected content rather than recurse.
   rm -f "$test_tmp/app_password" "$test_tmp/migrator_password" \
+    "$test_tmp/reader_password" \
     "$test_tmp/data/valid.csv" "$test_tmp/data/invalid.csv" \
+    "$test_tmp/data/interrupted.csv" "$test_tmp/data/workload.csv" "$test_tmp/data/overlap.csv" \
     "$test_tmp/missing-secret.log" "$test_tmp/invalid-import.log" || status=1
   rmdir "$test_tmp/data" "$test_tmp" 2>/dev/null || status=1
   if [ "$status" -ne 0 ]; then
@@ -77,7 +115,7 @@ trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
 
 mkdir "$test_tmp/data"
-for secret_name in app_password migrator_password; do
+for secret_name in app_password migrator_password reader_password; do
   od -An -N32 -tx1 /dev/urandom | tr -d ' \n' > "$test_tmp/$secret_name"
   printf '\n' >> "$test_tmp/$secret_name"
   # Readable inside non-root bind mounts; host parent stays mode 700.
@@ -87,7 +125,7 @@ app_password="$(cat "$test_tmp/app_password")"
 migrator_password="$(cat "$test_tmp/migrator_password")"
 
 echo 'Checking non-root runtime and absence of the Mix build toolchain'
-docker run --rm --platform linux/arm64 "$runtime_image" sh -ec '
+docker run --rm --platform linux/arm64 --memory 512m --cpus 1 --pids-limit 256 "$runtime_image" sh -ec '
   test "$(id -u)" = 10001
   test ! -w /app
   if command -v mix || command -v elixir || command -v cc; then
@@ -102,6 +140,7 @@ docker run --rm --platform linux/arm64 "$runtime_image" sh -ec '
 
 echo 'Checking missing credentials fail instead of starting'
 if docker run --rm --platform linux/arm64 \
+  --memory 512m --cpus 1 --pids-limit 256 \
   -e DATABASE_PASSWORD_FILE=/run/secrets/intentionally_missing \
   "$runtime_image" bin/gym_intel eval 'GymIntel.Release.migrate()' \
   > "$test_tmp/missing-secret.log" 2>&1; then
@@ -128,6 +167,7 @@ unset app_password migrator_password
 
 echo 'Applying all migrations using only the packaged release and migrator secret'
 docker run --rm --platform linux/arm64 --network "$test_network" \
+  --memory 512m --cpus 1 --pids-limit 256 \
   -e "DATABASE_HOST=$test_host" -e "DATABASE_PORT=$test_port" \
   -e "DATABASE_NAME=$test_database" -e "DATABASE_USER=$migrator_role" \
   -e DATABASE_PASSWORD_FILE=/run/secrets/migrator_password \
@@ -151,6 +191,7 @@ chmod 644 "$test_tmp/data/valid.csv" "$test_tmp/data/invalid.csv"
 
 run_import() {
   docker run --rm --platform linux/arm64 --network "$test_network" \
+    --memory 512m --cpus 1 --pids-limit 256 \
     -e "DATABASE_HOST=$test_host" -e "DATABASE_PORT=$test_port" \
     -e "DATABASE_NAME=$test_database" -e "DATABASE_USER=$runtime_role" \
     -e DATABASE_PASSWORD_FILE=/run/secrets/app_password \
@@ -169,6 +210,8 @@ test "$(psql_owner --dbname="$test_database" -Atc 'SELECT count(*) FROM oban_job
 
 echo 'Starting actual runtime worker, with no owner/migrator secret mounted'
 docker run --detach --platform linux/arm64 --name "$runtime_container" \
+  --label "com.gym-intel.release-fixture=$run_id" \
+  --memory 512m --cpus 1 --pids-limit 256 \
   --network "$test_network" \
   -e "DATABASE_HOST=$test_host" -e "DATABASE_PORT=$test_port" \
   -e "DATABASE_NAME=$test_database" -e "DATABASE_USER=$runtime_role" \
@@ -208,6 +251,10 @@ docker exec "$runtime_container" sh -ec '
   test ! -e /run/secrets/postgres_password
   test ! -e /run/secrets/postgres_migrator_password
   test ! -e /run/secrets/migrator_password'
+
+if [ "$readiness_mode" = true ]; then
+  . "$project_dir/scripts/readiness/rehearse.sh"
+fi
 
 echo 'Checking graceful runtime shutdown'
 docker stop --time 20 "$runtime_container" >/dev/null

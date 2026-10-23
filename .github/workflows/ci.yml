@@ -55,10 +55,25 @@ jobs:
           docker build --target checks --tag "$CI_IMAGE" .
           docker build --target runtime --tag "$RELEASE_IMAGE" .
 
+      - name: Verify advisory audit rejects an unavailable registry
+        shell: bash
+        run: |
+          set +e
+          audit_output="$(docker run --rm --network none --memory 512m --cpus 1 \
+            --env HEX_HTTP_TIMEOUT=1 --env HEX_HTTP_CONCURRENCY=8 \
+            "$CI_IMAGE" mix hex.audit 2>&1)"
+          audit_status=$?
+          set -e
+          printf '%s\n' "$audit_output"
+          test "$audit_status" -ne 0
+          [[ "$audit_output" == *'Could not audit these locked packages:'* ]]
+          [[ "$audit_output" != *'No retired or security advisory packages found'* ]]
+          echo 'PASS: unavailable registry fails the audit instead of accepting cached results'
+
       - name: Verify Compose defaults and alternate host ports
         run: CHECK_IMAGE="$CI_IMAGE" sh scripts/verify-compose.sh
 
-      - name: Check formatting, compilation, fresh migrations and all tests
+      - name: Audit dependencies, check formatting, compilation, migrations and tests
         shell: bash
         run: |
           umask 077
@@ -89,4 +104,9 @@ jobs:
           sh scripts/verify-release.sh
 
       - name: Verify backup recovery, rolling-two updates and saved status with synthetic data
-        run: sh scripts/verify-recovery.sh
+        run: |
+          docker pull --platform linux/arm64 grafana/grafana:13.2
+          CHECK_IMAGE="$CI_IMAGE" sh scripts/verify-recovery.sh
+
+      - name: Reproduce fresh setup, measure workload and recover an interrupted import
+        run: CHECK_IMAGE="$CI_IMAGE" sh scripts/verify-readiness.sh

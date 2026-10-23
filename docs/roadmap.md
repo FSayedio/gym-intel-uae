@@ -85,6 +85,24 @@ housekeeping failures, not fresh system health. Alerting, metrics, off-device
 recovery, abrupt real-host interruption drills and dependency follow-ups remain
 open; saved summaries do not close the entire operations milestone.
 
+The combined operational-readiness PR now covers three areas: dependency
+remediation/advisory CI gating, local recovery procedures, and reproduction/
+workload/interruption evidence. The user chose existing operator-triggered health
+checks instead of scheduled checks/notifications; automated monitoring is not
+claimed. Azure/off-device backups were also deferred rather than creating an
+account, leaving laptop-loss protection explicitly open. The local recovery
+extension reconstructs Git-managed Grafana with fresh credentials against a
+verified restored copy; no live cutover or recovery of untracked UI state is
+claimed. Independent-environment evidence must be verified, not inferred from
+documentation. Kubernetes remains a later milestone.
+
+Local working-tree verification for all three areas is recorded in
+[CI and rehearsal evidence](ci.md#local-measurement-evidence-23-october-2026):
+180 tests, packaged-release/recovery/Compose checks, a bounded 1,500-observation
+workload and deliberate recovery of an interrupted import. This is local evidence,
+not a merged delivery or hosted-CI result. Abrupt-job recovery remains an explicit
+operator action; no automatic orphan-rescue policy was introduced.
+
 ## Kubernetes is a later deployment milestone
 
 Kubernetes replaces Compose's coordination role for that deployment, not the
@@ -128,7 +146,7 @@ earlier in-chat roadmap estimate or a claimed verbatim two-bucket classification
 | Docs/operator entrypoints (M9, m10, m11, m12, m14) | Iterative checkpoints accumulated; initial grants/imports were manual. | Feature 6 added tested release helpers; Feature 7 records the sequence and archives old instructions. Dead-code/API-doc cleanup or complete setup automation needs a justified code PR. |
 | Developer ergonomics/quality gates (m4, m5, M8) | Manual early checks did not cover all static tooling, coverage or quiet-test ergonomics. | CI now exists; choose Credo/Dialyzer/coverage/logging from concrete risks. Protected-branch enforcement needs an explicit account/visibility decision; governance remains manual. |
 | Validation details (M3, M10, m1, m15) | Early examples missed CSV/text/date edge cases. | Feature 4 added explicit input/CSV rules and regression tests. The review's unverified uppercase-scheme concern remains a targeted test candidate, not a claimed fix. HTTP(S) syntax does not authenticate a source. New normalization must not silently rewrite evidence. |
-| Dependency/security follow-up | Locked successful builds check consistency, not vulnerability absence. | Assess recorded Decimal advisory; remediate in a focused tested PR. Broader scanning/package pinning remain separate; no security clearance claimed. |
+| Dependency/security follow-up | Locked successful builds check consistency, not vulnerability absence. | Operational-readiness work upgrades Decimal 3.1.1 to the 3.1.2 security patch and adds a failing Hex advisory/retirement gate. See CI evidence and remaining limits; broader OS/image scanning and package pinning remain separate, with no security clearance claimed. |
 | Broader official metrics/collection | First delivered slice was pricing, not uniform evidence for every metric. | Audit branch footprint, hours, equipment and facilities one metric at a time before fields/views. Do not guess gaps, scrape or contact gyms under current scope. |
 | Custom UI/auth/upload/review/API/scraping | External review proposed a different application shape. These were deliberately excluded, not forgotten. | Retain as excluded unless user changes scope after examining need. Phoenix/Redis/custom APIs/forms are not prerequisites for closing this local milestone. |
 

@@ -14,6 +14,7 @@ disaster recovery, continuous archiving or a production backup service.
 | PostgreSQL `pg_dump` | Whole single-database custom-format archive: schema, rows, sequences, object ownership and grants |
 | [snapshot.sql](../scripts/recovery/snapshot.sql) | Deterministic private comparison: full-row hashes, schema/grants, migrations and sequence states |
 | [verify-database-backup.sh](../scripts/verify-database-backup.sh) | Isolated restore, full comparison, real permission denials and transactional identity/note probes |
+| Optional `--with-dashboard` and [dashboard_probe.exs](../scripts/recovery/dashboard_probe.exs) | Fresh Grafana from Git against restored data, real panel queries and fresh admin login; never a live cutover |
 | [common.sh](../scripts/recovery/common.sh) | Managed-path/privacy/checksum checks and fail-closed two-copy retention |
 | [verify-recovery.sh](../scripts/verify-recovery.sh) | Disposable synthetic source/restore integration test; never development data |
 
@@ -28,7 +29,9 @@ volume and Git checkout are **not** included. The isolated verifier recreates
 the four supported role identities with distinct throwaway passwords; it does
 not copy live credentials. Custom memberships/role settings or additional user
 schemas require an explicitly reviewed extension, not a silent partial-success
-claim. Recovering actual credentials and a whole machine remains separate work.
+claim. Existing-volume credential recovery and whole-machine recovery remain
+separate work. The replacement rehearsal uses new credentials; a data archive
+is not a password-recovery mechanism.
 
 ## Create and verify a backup
 
@@ -122,6 +125,100 @@ The exact source image must still exist locally; missing/incompatible images
 fail rather than silently switching PostgreSQL versions. Image delivery after
 cache/machine loss is not solved by this local-only feature.
 
+## Rehearse the replacement dashboard
+
+The optional mode restores a trusted bundle into a **fresh disposable target**,
+then starts fresh Grafana with our Git-provisioned dashboard/datasource and new
+admin/reader credentials:
+
+```bash
+sh scripts/verify-database-backup.sh /absolute/path/to/backup-directory --with-dashboard
+```
+
+Supply an actual managed bundle path, not that placeholder. The default verifier
+remains network-disabled. This mode instead creates a labelled, internal-only
+Docker network with no host ports or live volume/secret mounts. Grafana uses tmpfs
+rather than its existing volume. PostgreSQL, Grafana and checks images must
+already be present locally and ARM64-compatible; no image is silently pulled.
+PostgreSQL must match the backup's recorded exact image ID.
+
+After the original baseline/permission checks, the probe verifies:
+
+- A healthy datasource authenticated as the restricted `gym_intel_grafana` reader.
+- Git-matching dashboard identity and both panels' exact query configuration.
+  Chart/conditions must return the same ordered offer names and numeric chart
+  prices. An empty eligible set is valid for a generic backup. The synthetic
+  rehearsal separately requires its exact one-offer/199 fixture, preventing an
+  empty result from falsely passing that test.
+- A freshly generated credential authenticates as the administrator.
+- No runtime/worker connection and unchanged captured PostgreSQL state after the
+  HTTP queries. No restored jobs execute.
+
+Full baseline comparisons run before the transactional identity/duplicate insert
+probes: rolling back those inserts removes their rows but does not undo ID-sequence
+advances. The initial rehearsal caught the wrong ordering; the full comparison
+was retained and the probes moved afterward, with an ordering regression test.
+
+Only generated containers/network/credentials are removed, with identity labels
+checked first. A cleanup failure can follow an earlier PASS: require the final
+zero exit. Logs stay private in `restore.log`; the archive, retained copies and
+verification marker are unchanged. Do not run concurrently with another recovery
+or update command. This proves API/data flow, not pixel-perfect browser rendering.
+Neither replacement is retained or activated; no new permanent service is added.
+
+## Incident procedure: preserve, restore, verify, explicitly cut over
+
+This is an operator procedure, not a restore-over-live one-liner. The verifier
+destroys its temporary replacement; an actual incident needs a separately
+approved **persistent** target and cutover.
+
+1. **Freeze and identify.** Record the project, source revision, failing service,
+   volume/container identities and trusted backup. Stop submissions and inspect
+   unfinished jobs. Stop only the worker under an agreed maintenance window.
+   Preserve the original target, secrets, evidence and both verified copies.
+2. **Select the recovery point.** Review capture time, known input markers and job
+   state privately. A backup cannot recover later writes. Preserve fingerprint
+   markers; do not force old-file imports or start a restored worker to inspect it.
+3. **Prove the copy first.** Run the optional rehearsal above. Resolve missing
+   images, changed checksums/schema/permissions and missing Git configuration;
+   do not weaken authentication or waive failures.
+4. **Prepare a distinct empty persistent target.** Approve its exact volume,
+   container/database names and matching image/revision before creating it.
+   Recreate the four supported role identities with distinct new secret-file
+   passwords. The tested `bootstrap.sql`/restore sequence establishes the order:
+   roles and empty database, complete archive restore with ownership/grants via
+   `pg_restore --exit-on-error --single-transaction`, then full baseline and
+   permission checks. Do not use `--clean`, drop the old database, or apply initial
+   migrations over the restored schema.
+5. **Reconstruct and validate Grafana.** Use the tracked provisioning/dashboard,
+   fresh Grafana volume and matching new reader/admin secrets. Check datasource,
+   actual panel queries and administrator login. Ad-hoc users, preferences,
+   sessions and untracked UI changes are deliberately not recovered.
+6. **Authorize cutover separately.** Confirm the recovery point/data loss, matching
+   app/config revision, no other writers, credential mounts and destination.
+   Only then switch clients to the verified persistent target. Review restored
+   job states before enabling the worker; HTTP health is not import completion.
+   Inspect the dashboard manually. Keep the original target until recovery is
+   accepted and its disposal is separately approved.
+
+The replacement rehearsal is implemented/tested; actual live cutover, a persistent
+replacement deployment and physical-host failure have not been performed here.
+Do not assume a generic command selects a new target rather than the live one.
+
+### Credential loss is not volume loss
+
+| Incident | Response | Boundary |
+| --- | --- | --- |
+| Non-owner password lost, owner available | Reviewed role reset through the owner, matching private-file update and targeted client recreation, following local development guidance. | A file replacement alone does not reset a stored password. |
+| Owner credential lost, old volume remains | Recover the credential privately; otherwise use a trusted backup and separate fresh target. Preserve the old volume. | No trust-auth bypass or volume reset. |
+| PostgreSQL volume lost, backup remains | Restore captured schema/data/grants with new role credentials. | Original passwords and writes after capture are not in the archive. |
+| Grafana volume/admin credential lost | Reconstruct Git-managed state in a fresh target with new credentials. Retaining an existing volume needs a separate reviewed admin reset. | Changing its password-file setting does not reset an initialized account. UI-only state is not backed up. |
+| Laptop and local backup drive lost | Recover from an independently retained copy, if any. | Azure/off-device backup was explicitly deferred; a lost only copy is unrecoverable here. |
+
+Keep credential recovery material privately outside Git/transcripts. No credential
+export, password-manager account, scheduler, notification or off-device service
+is configured by this work. Existing health checks remain operator-triggered.
+
 ## Retention and failure behaviour
 
 - Keep the latest **two verified backups**, not two days. Captures are explicit
@@ -148,9 +245,10 @@ unchanged. Oban peer/lifecycle metadata can legitimately change when the app
 stops/restarts; compare the restored copy to its **captured** baseline, not a
 later running database's heartbeat. Grafana remains a query-only reader.
 
-There is no automatic restore into development, destructive rollback, credential
-recovery, off-device copy, scheduler, PITR or Grafana backup here. A real incident
-still needs an explicitly reviewed target/recovery plan before replacing data.
+There is no automatic live restore, destructive rollback, existing-volume password
+bypass, off-device copy, scheduler, PITR or Grafana-volume backup. Grafana can be
+reconstructed as above; a real incident still needs an approved persistent target
+and cutover plan before replacing data.
 
 ## Repeatable verification
 
@@ -201,3 +299,18 @@ and [pg_restore](https://www.postgresql.org/docs/18/app-pgrestore.html).
 
 These are local checks, not a claim that a later PR/merge passed hosted CI. Check
 the associated recovery PR's exact revision before review/merge.
+
+## Operational-readiness recovery checkpoint — 23 October 2026
+
+- Expanded source/database suite: **174 passed**, seed `333177`, including six
+  dashboard-probe tests and the sequence-sensitive ordering regression.
+- The synthetic backup reconstructs fresh Grafana from Git against restored
+  PostgreSQL: both real panel queries return the one expected 199 offer, reader
+  connectivity works, and a fresh administrator credential authenticates. An
+  intentional expected price of 198 is rejected, not reported as recovery success.
+- Full captured data/schema/grants/sequences are compared before and after the
+  HTTP reads. Identity/duplicate insert probes run afterward because their rolled-
+  back inserts legitimately advance sequences in the disposable copy.
+- These are local, uncommitted working-branch results, not hosted CI or an actual
+  live cutover. No real backups, passwords, dashboard data or volumes were used
+  by the new synthetic reconstruction check. Off-device recovery remains deferred.

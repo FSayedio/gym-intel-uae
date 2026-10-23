@@ -4,7 +4,8 @@ ENV MIX_ENV=prod
 
 WORKDIR /app
 
-RUN mix local.hex --force && mix local.rebar --force
+# Older audit tasks can silently accept cached records after registry failures.
+RUN mix local.hex 2.6.0 --force && mix local.rebar --force
 
 COPY mix.exs mix.lock ./
 COPY config ./config
