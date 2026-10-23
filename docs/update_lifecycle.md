@@ -1,5 +1,11 @@
 # One-command dashboard update and rolling-two retention
 
+For the active Kubernetes deployment use
+`sh scripts/k8s.sh update data/memberships.csv`. The lifecycle below is shared;
+that entrypoint selects Kubernetes transport and its separate private backup/
+report directory. Bare Compose commands operate on the retained Compose copy,
+not the live Kubernetes data. See [the Kubernetes guide](kubernetes.md).
+
 ## Outcome and entrypoint
 
 The product shows current recorded offers, not a price-history product.

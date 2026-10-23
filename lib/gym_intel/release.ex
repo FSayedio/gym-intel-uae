@@ -3,6 +3,25 @@ defmodule GymIntel.Release do
 
   alias GymIntel.{MembershipCSV, Repo}
 
+  @doc "Readiness only: connect and query without starting the application or Oban."
+  def ready do
+    Application.load(:gym_intel)
+    {:ok, _} = Application.ensure_all_started(:ecto_sql)
+    {:ok, _} = Application.ensure_all_started(:postgrex)
+    {:ok, repo} = Repo.start_link(pool_size: 1)
+
+    try do
+      %{rows: [[true]]} =
+        Ecto.Adapters.SQL.query!(Repo, "SELECT to_regclass('public.memberships') IS NOT NULL", [],
+          timeout: 5_000
+        )
+
+      IO.puts("PASS: database connection and membership schema ready")
+    after
+      Supervisor.stop(repo)
+    end
+  end
+
   def migrate do
     Application.load(:gym_intel)
 

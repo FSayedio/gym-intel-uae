@@ -5,23 +5,25 @@ people interpret official gym offers and make their own choice—not declare one
 universally best gym.
 
 Working workflow: CSV -> Elixir + Oban -> PostgreSQL -> Grafana.
-Exactly three application services run locally using Docker Compose.
+Exactly three application services run in a local ARM64 Kubernetes (Kind) cluster.
+Docker Desktop provides the container runtime; Compose remains an explicit
+development/recovery alternative, not a second active pipeline.
 The app uses a non-root packaged release; build/test tooling lives in a separate
 image target. Host ports are configurable without changing container endpoints.
 
 Gym facts must include a source and observation date.
 Missing information remains unknown.
 
-Status: local pricing MVP and the seven-feature foundation/reliability milestone
-delivered through [PR #15](https://github.com/FSayedio/gym-intel-uae/pull/15).
-The next focused feature is [local database backup and verified restore](docs/database_recovery.md).
-Finishing the seven features closed one milestone, not the project. Broader product work,
-operational recovery and eventual Kubernetes deployment remain on the
-[roadmap](docs/roadmap.md).
+Status: the seven-feature foundation and subsequent operational-readiness work
+are delivered through [PR #20](https://github.com/FSayedio/gym-intel-uae/pull/20).
+The [Kubernetes migration](docs/kubernetes.md) adds local cluster operation while
+preserving the verified update/backup/rolling-two lifecycle. Its PR and CI status
+remain separate from these implementation instructions.
 
 ## Start here
 
-- [Operator runbook: setup, import, verify, diagnose and stop](docs/operator_runbook.md)
+- [Kubernetes setup, migration, daily commands and before/after examples](docs/kubernetes.md)
+- [Compose alternative operator runbook](docs/operator_runbook.md)
 - [Database backup, isolated restore verification and retention](docs/database_recovery.md)
 - [One-command dashboard update and rolling-two lifecycle](docs/update_lifecycle.md)
 - [Read-only update status and automatic two-report retention](docs/update_status.md)
@@ -33,11 +35,10 @@ operational recovery and eventual Kubernetes deployment remain on the
 - [Roadmap, milestone status and deferred review findings](docs/roadmap.md)
 - [Historical reviewer checkpoints—not current instructions](docs/reviewer_history.md)
 
-After following first setup in the runbook, an unchanged existing stack resumes
-with `docker compose up -d --wait`. The default dashboard is
-<http://127.0.0.1:3000/d/gym-intel-offers>; discover a configured alternate address
-with `docker compose port grafana 3000`. Starting services does not migrate or
-import automatically.
+After Kubernetes setup, resume with `sh scripts/k8s.sh start`. The dashboard is
+<http://127.0.0.1:3001/d/gym-intel-offers>. Starting services does not migrate or
+import automatically. Use `sh scripts/k8s.sh update data/memberships.csv` for
+verified updates; do not run Compose commands against the stopped rollback copy.
 
 With both checked-in snapshots imported before lifecycle cleanup: six observations,
 four brands, one vertical advertised-charge graph and a compact conditions table.
@@ -45,6 +46,7 @@ There are no filters. Dates and terms differ; Warehouse's historical access scop
 is unresolved. These are not equivalent memberships, live quotes or all-in costs.
 
 Keep this deployment local. Secrets are private file mounts, merge governance
-is manual, and off-device recovery, scheduled backups, job pruning and full
-clean-machine reproduction remain open. See the handoff and roadmap for evidence
+is manual, and off-device recovery and high availability remain outside this
+local deployment. Verified updates include bounded job/backup/report cleanup;
+health checks remain operator-triggered. See the handoff and roadmap for evidence
 and limits; local restore verification is not a full disaster-recovery service.

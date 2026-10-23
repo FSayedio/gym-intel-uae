@@ -10,3 +10,4 @@
 # Elixir build outputs and downloaded dependencies
 _build/
 deps/
+.local/

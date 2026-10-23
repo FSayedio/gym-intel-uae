@@ -3,8 +3,8 @@
 ## Project boundaries
 
 - Build a local pipeline: CSV -> Elixir + Oban -> PostgreSQL -> Grafana.
-- Run exactly three local Docker services using ARM64-compatible images.
-- Do not add Phoenix, custom APIs or forms, Redis, Kubernetes, or scraping.
+- Run three application services using ARM64-compatible images. The explicitly authorised local Kubernetes migration uses Kind; Compose remains a recovery/development option, not a second active production pipeline.
+- Do not add Phoenix, custom APIs or forms, Redis, cloud infrastructure, or scraping without separate authorisation.
 - Track branch footprint, published prices and commitments, opening hours, documented equipment, and facilities.
 - Every fact needs a source, observation date, and correct geographic and branch scope. Missing information stays unknown.
 - Work in three iterations through Friday, 11 September 2026: working MVP, reliability, then measurement and reproducibility.

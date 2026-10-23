@@ -5,6 +5,11 @@ umask 077
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$project_dir"
 . "$project_dir/scripts/recovery/common.sh"
+case "${GYM_INTEL_BACKEND:-compose}" in
+  compose) ;;
+  kubernetes) . "$project_dir/scripts/kubernetes/common.sh"; kube_guard ;;
+  *) echo 'Unknown execution backend' >&2; exit 2 ;;
+esac
 case "$#" in
   0) backup_root="$HOME/Library/Application Support/Gym Intel UAE/backups" ;;
   2) test "$1" = --directory || { echo 'Usage: sh scripts/backup-database.sh [--directory /absolute/private/path]' >&2; exit 2; }
@@ -30,6 +35,10 @@ capture_pending=''
 capture_app=''
 capture_restart=false
 capture_resume() {
+  if [ "${GYM_INTEL_BACKEND:-compose}" = kubernetes ]; then
+    kube_resume
+    return
+  fi
   docker start "$capture_app" >/dev/null || return 1
   capture_wait=15
   while [ "$capture_wait" -gt 0 ]; do
@@ -62,6 +71,13 @@ cleanup_capture() {
 }
 trap cleanup_capture EXIT
 trap 'exit 1' HUP INT TERM
+if [ "${GYM_INTEL_BACKEND:-compose}" = kubernetes ]; then
+  capture_postgres=postgres-0
+  capture_app=app
+  source_psql() { kube_psql "$@"; }
+  capture_replicas=$(kube get deployment app -o 'jsonpath={.spec.replicas}')
+  case "$capture_replicas" in 0|1) ;; *) recovery_fail 'Expected at most one app replica'; exit 1 ;; esac
+else
 capture_postgres=$(docker compose ps -q postgres)
 test -n "$capture_postgres"
 capture_project=${RECOVERY_FIXTURE_PROJECT:-gym-intel-uae}
@@ -77,11 +93,18 @@ capture_app=$(docker compose ps -a -q app)
 test -n "$capture_app"
 test "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$capture_app")" = "$capture_project"
 source_psql() { docker exec -i "$capture_postgres" sh /opt/gym-intel/psql.sh "$@"; }
+fi
 test "$(source_psql -qAtc 'SELECT current_database()')" = gym_intel_dev
 test "$(source_psql -qAtc "SELECT count(*) FROM public.oban_jobs WHERE state IN ('available','scheduled','executing','retryable')")" = 0 || {
   recovery_fail 'Unfinished jobs exist; no app stop, capture or cancellation performed'; exit 1;
 }
-if [ "$(docker inspect --format '{{.State.Running}}' "$capture_app")" = true ]; then
+if [ "${GYM_INTEL_BACKEND:-compose}" = kubernetes ]; then
+  if [ "$capture_replicas" = 1 ]; then
+    capture_restart=true
+    echo 'Pausing the Kubernetes app; PostgreSQL and Grafana remain running'
+    kube_pause
+  fi
+elif [ "$(docker inspect --format '{{.State.Running}}' "$capture_app")" = true ]; then
   # Set restart intent BEFORE stop, so interruption during stop still resumes it.
   capture_restart=true
   echo 'Pausing the existing app briefly; PostgreSQL and Grafana remain running'
@@ -93,12 +116,26 @@ test "$(source_psql -qAtc "SELECT count(*) FROM public.oban_jobs WHERE state IN 
   recovery_fail 'Jobs appeared during shutdown; capture refused'; exit 1;
 }
 capture_pending=$(mktemp -d "$backup_root/.pending-XXXXXX")
-capture_image=$(docker inspect --format '{{.Image}}' "$capture_postgres")
+if [ "${GYM_INTEL_BACKEND:-compose}" = kubernetes ]; then
+  # Restore verification uses the same local Docker image loaded into Kind.
+  capture_tag=$(kube get pod postgres-0 -o 'jsonpath={.spec.containers[0].image}')
+  test "$capture_tag" = postgres:18.6-alpine
+  capture_image=$(docker image inspect "$capture_tag" --format '{{.Id}}')
+else
+  capture_image=$(docker inspect --format '{{.Image}}' "$capture_postgres")
+fi
 printf '%s\n' "$capture_image" > "$capture_pending/image-id"
 printf 'gym-intel-db-backup-v1\n' > "$capture_pending/format"
 source_psql -qAt < "$project_dir/scripts/recovery/snapshot.sql" \
   > "$capture_pending/baseline.json" 2> "$capture_pending/capture.log"
-docker exec "$capture_postgres" sh -ec '
+capture_dump() {
+  if [ "${GYM_INTEL_BACKEND:-compose}" = kubernetes ]; then
+    kube exec postgres-0 -- sh -ec "$1"
+  else
+    docker exec "$capture_postgres" sh -ec "$1"
+  fi
+}
+capture_dump '
   export PGPASSWORD="$(cat /run/secrets/postgres_password)"
   exec pg_dump --format=custom --no-password --username=gym_intel --dbname=gym_intel_dev
 ' > "$capture_pending/database.dump" 2>> "$capture_pending/capture.log"

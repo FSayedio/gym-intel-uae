@@ -1,5 +1,29 @@
 # CI and manual review governance
 
+## Kubernetes acceptance
+
+The Kubernetes migration adds a separate `Kubernetes acceptance (ARM64)` job.
+It installs checksum-verified project-local kubectl/Kind, creates a disposable
+single-node cluster, then runs `sh scripts/verify-kubernetes.sh`: fresh migrations,
+actual role denials, three synthetic update/backup/cleanup cycles, rejected input,
+PostgreSQL/Grafana pod replacement with persistent storage, actual dashboard
+queries and the full source/database suite. Test credentials are generated for
+that namespace, never copied from a real developer environment. Jobs/pods and
+the synthetic namespace are cleaned up; private archives/CSV arguments are not
+uploaded as artifacts.
+
+The original `CI checks (ARM64)` job remains. Both jobs must be green on the PR's
+latest revision before the learner merges. This is the existing manual policy,
+not newly enforced branch protection. A successful local run does not establish
+hosted CI success; inspect the PR checks separately.
+
+Local migration evidence on 23 October 2026: 184 tests passed inside Kubernetes,
+the source/target protected-state hash matched, four real offers were queried
+through Grafana, and Kubernetes-side backup restoration passed. See the final PR
+for the exact revision and complete acceptance/hosted results.
+
+## Earlier Compose/source evidence
+
 Feature 6 extends the original source checks below with separate checks/runtime
 images and a final-image live-job smoke test. The job remains `CI checks (ARM64)`;
 manual review/merge policy is unchanged. Feature 6's latest

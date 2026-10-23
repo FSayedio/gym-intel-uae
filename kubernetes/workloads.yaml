@@ -1,0 +1,189 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector: {app: postgres}
+  ports: [{port: 5432, targetPort: 5432}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: {app: postgres}
+  template:
+    metadata:
+      labels: {app: postgres}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: postgres
+          image: postgres:18.6-alpine
+          imagePullPolicy: Never
+          args: [postgres, -c, hba_file=/opt/gym-intel/pg_hba.conf]
+          env:
+            - {name: POSTGRES_DB, value: gym_intel_dev}
+            - {name: POSTGRES_USER, value: gym_intel}
+            - {name: POSTGRES_PASSWORD_FILE, value: /run/secrets/postgres_password}
+            - {name: POSTGRES_HOST_AUTH_METHOD, value: scram-sha-256}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 768Mi}
+          readinessProbe:
+            exec:
+              command: [sh, /opt/gym-intel/psql.sh, --host=127.0.0.1, -qAtc, SELECT 1]
+            periodSeconds: 5
+            timeoutSeconds: 3
+          startupProbe:
+            exec:
+              command: [sh, /opt/gym-intel/psql.sh, --host=127.0.0.1, -qAtc, SELECT 1]
+            failureThreshold: 60
+            periodSeconds: 3
+            timeoutSeconds: 3
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql}
+            - {name: scripts, mountPath: /opt/gym-intel, readOnly: true}
+            - {name: sql, mountPath: /opt/gym-intel-priv, readOnly: true}
+            - {name: passwords, mountPath: /run/secrets, readOnly: true}
+      volumes:
+        - name: scripts
+          configMap: {name: postgres-scripts}
+        - name: sql
+          configMap: {name: postgres-sql}
+        - name: passwords
+          secret: {secretName: postgres-passwords, defaultMode: 292}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests: {storage: 2Gi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 0
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: app}
+  template:
+    metadata:
+      labels: {app: app}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 25
+      securityContext: {runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, runAsNonRoot: true}
+      containers:
+        - name: app
+          image: gym-intel-runtime:kubernetes
+          imagePullPolicy: Never
+          command: [sh, -ec, 'ulimit -n 65536; exec bin/gym_intel start']
+          envFrom:
+            - configMapRef: {name: app-settings}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          readinessProbe:
+            exec:
+              command: [sh, -ec, 'ulimit -n 65536; exec bin/gym_intel eval "GymIntel.Release.ready()"']
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 20
+            failureThreshold: 3
+          volumeMounts:
+            - {name: password, mountPath: /run/secrets, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: password
+          secret: {secretName: app-password, defaultMode: 288}
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 1Gi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+spec:
+  replicas: 0
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: grafana}
+  template:
+    metadata:
+      labels: {app: grafana}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsUser: 472, runAsGroup: 472, fsGroup: 472, runAsNonRoot: true}
+      containers:
+        - name: grafana
+          image: grafana/grafana:13.2
+          imagePullPolicy: Never
+          command: [/bin/sh, /opt/gym-intel/grafana-start.sh]
+          env:
+            - {name: GF_AUTH_ANONYMOUS_ENABLED, value: "true"}
+            - {name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer}
+            - {name: GF_AUTH_DISABLE_LOGIN_FORM, value: "false"}
+            - {name: GF_SECURITY_ADMIN_USER, value: admin}
+            - {name: GF_SECURITY_ADMIN_PASSWORD__FILE, value: /run/secrets/grafana_admin_password}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          readinessProbe:
+            httpGet: {path: /api/health, port: 3000}
+            periodSeconds: 5
+          startupProbe:
+            httpGet: {path: /api/health, port: 3000}
+            periodSeconds: 3
+            failureThreshold: 60
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/grafana}
+            - {name: passwords, mountPath: /run/secrets, readOnly: true}
+            - {name: start, mountPath: /opt/gym-intel, readOnly: true}
+            - {name: datasources, mountPath: /etc/grafana/provisioning/datasources, readOnly: true}
+            - {name: dashboards, mountPath: /etc/grafana/provisioning/dashboards, readOnly: true}
+            - {name: panels, mountPath: /var/lib/grafana/project-dashboards, readOnly: true}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: grafana-data}
+        - name: passwords
+          secret: {secretName: grafana-passwords, defaultMode: 288}
+        - name: start
+          configMap: {name: grafana-start}
+        - name: datasources
+          configMap: {name: grafana-datasources}
+        - name: dashboards
+          configMap: {name: grafana-provider}
+        - name: panels
+          configMap: {name: grafana-panels}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+spec:
+  selector: {app: grafana}
+  ports: [{port: 3000, targetPort: 3000}]
