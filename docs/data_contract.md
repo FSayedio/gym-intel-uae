@@ -468,8 +468,12 @@ decision about a clearly labelled offer/terms explorer is separate from claiming
 that these prices represent comparable contracts. Do not weaken unknown, scope,
 tax or commitment rules silently, and do not use outreach to close these gaps.
 
-This result is part of [Feature 2's consolidated completion gates](reviewer_handoff.md#feature-2--consolidated-scope-and-completion-gates),
+This historical result is part of [Feature 2's consolidated completion gates](reviewer_history.md#feature-2--consolidated-scope-and-completion-gates),
 not a separate completed data-expansion feature. The technical safeguards and
 bounded audit are recorded as complete milestones; a verified real-data group
 and branch delivery remain outstanding. No change to the exact-match contract
 or approval of a threshold mode follows from documenting this result.
+
+Later delivery and the approved offer-explorer product decision are recorded in
+the [current handoff](reviewer_handoff.md) and [roadmap](roadmap.md). The historical
+three-operator/strict-cohort counts above are not today's displayed-brand count.

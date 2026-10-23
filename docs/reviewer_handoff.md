@@ -1,522 +1,158 @@
-# Pricing MVP — reviewer handoff
+# Current reviewer handoff
 
-## Latest runtime/portability checkpoint — 23 October 2026
+Updated 23 October 2026. Review this page first; the
+[historical checkpoints](reviewer_history.md) preserve earlier evidence and
+superseded designs, not current operating instructions.
 
-Feature 6 is implemented on `codex/runtime-portability`, based on merged main
-`5b605dc4f0431b064c44e2d33b81e48dd6d01d3b`. This section supersedes earlier
-Mix-based runtime commands; use [Local development](local_development.md).
-At this implementation checkpoint no Feature 6 commit, push, PR, remote CI
-result or merge is claimed yet. Inspect Git/GitHub for later delivery status.
+## Outcome and scope
 
-- **Before:** one root-default image contained both build tools and the running
-  app; operators used Mix for migrations/imports, and host ports were fixed.
-- **Action:** separate checks/builder/runtime stages; package an Elixir release
-  with its VM and required Alpine libraries; run as UID/GID 10001 with root-owned
-  app files; provide explicit migration/import helpers; keep owner/migrator
-  credentials out of the running app. Disable Erlang distribution and allow
-  20 seconds for app shutdown. Add configurable localhost host ports, preserving
-  internal connections, project name and named volumes.
-- **After:** `sh scripts/import-csv.sh data/memberships.csv` submits a bounded CSV
-  snapshot and reports a job ID, not an unverified success claim. A user may set
-  `GRAFANA_HOST_PORT=3001` without changing `postgres:5432` or port 3000 inside
-  Grafana. Normal app startup does not migrate automatically. Runtime contains
-  packaged migration resources, but no Mix/Hex/Rebar build CLI/full source tree.
-- **Evidence:** the full isolated source suite reported **121 passed**, seed
-  `466891`, including shell-wrapper argument/path handling and failure-status
-  propagation. Application compilation uses warnings-as-errors; formatting and
-  locked dependencies are checked separately. Local runtime smoke checks applied
-  all six migrations using the final image and a temporary migrator credential,
-  rejected missing credentials/invalid CSV, then ran two real supervised Oban
-  jobs with a temporary runtime credential. Both completed on attempt one with
-  no errors; one exact synthetic observation, note and file marker remained.
-  Graceful shutdown returned zero. Its temporary worker, DB, roles and files
-  were removed; no development test jobs were submitted.
-- **Mount issue found/fixed:** the actual development migration helper applied
-  zero migrations but initially failed its grant refresh because tracked SQL
-  files had been replaced on the host while PostgreSQL retained deleted-file
-  binds. With explicit learner approval, configuration/SQL were changed to two
-  read-only directory mounts. A private logical backup was created outside Git
-  and its archive list validated; PostgreSQL was recreated with the identical
-  named data volume. Original observation/note/import checksums were unchanged,
-  six observations/four brands remained, and the complete migration/grant helper
-  then passed. App resumed as UID 10001; Grafana datasource health reported OK.
-  No data volume was reset or deleted, and no new migrations/gym records were
-  introduced in Feature 6.
-- **CI extension:** the existing ARM64 job builds both targets, verifies rendered
-  default/alternate port configurations (including directory-mount guards), runs
-  the source suite in `checks`, and independently runs the final-image live-job
-  smoke test against a separate generated database on disposable PostgreSQL.
-  The usual latest-revision green check and learner merge review still apply.
-- **Limits:** ARM64 Docker only, not Kubernetes, x86, registry publication,
-  universal fresh-machine reproduction or full hosted Grafana/visual testing.
-  A small runtime/non-root account is not a vulnerability clearance or protection
-  against Docker's administrator. Builder/runtime bases are digest-pinned;
-  PostgreSQL/Grafana tags, APK resolution and build tools are not fully pinned.
-  The Decimal advisory and upstream Ecto deprecation warning remain. Backup
-  restore and in-flight power-loss/load scenarios were not tested here. Failed
-  or interrupted cleanup may require scoped operator attention; never substitute
-  broad database/volume deletion. Credential mounts remain individual files.
+Help a person make their own gym choice using objective, source-backed facts.
+The delivered slice is a local **advertised monthly-charge offer explorer**,
+not a best-gym ranking, equivalent-membership comparison or total-cost calculator.
 
-### Hosted-build finding and follow-up
+```text
+Manually verified CSV -> Elixir validation -> durable Oban job
+                    -> transactional importer -> PostgreSQL
+                    -> restricted public view -> Grafana
+```
 
-The initial PR #14 run for `7eb88ec` failed before tests in the Alpine guard:
-GitHub resolved the mutable Elixir tag to a builder with Alpine 3.24.3, while
-the local cached builder had 3.24.1. This was not waived or bypassed. The follow-up
-pins registry-verified builder/runtime digests to the matching 3.24.3 pair and
-retains the version check. Application dependency locks are unchanged. A new
-latest-revision hosted run must pass; the older failed run remains reviewable.
-The pinned pair rebuilt locally and the isolated source suite again passed
-121 tests, seed `923929`; this follow-up is not a claim that hosted CI passed.
+Exactly three long-running ARM64 Docker Compose services: app, PostgreSQL and
+Grafana. Short-lived operator/test containers are separate from those services.
+There is no automatic fetching, import schedule, scraping, custom web app or API.
+Kubernetes is a later deployment milestone, not part of this local delivery.
 
-## Latest integrity checkpoint — 23 October 2026
+## Delivery and evidence baseline
 
-Feature 5 is implemented on `codex/observation-integrity`, based on main at
-`d1cadba3dba4f7acb95b5c7b9ef53704327dbe80`. At this checkpoint the work is
-unstaged/uncommitted: no Feature 5 push, PR, GitHub CI result or merge is claimed.
-The local development migration and permission refresh have been applied.
-The earlier checkpoints below remain historical; current identity/permissions
-and internal-note handling are defined by this section and
-[Observation integrity](observation_integrity.md).
+At baseline `03cf1df`, Features 1–6 of the seven-feature foundation/reliability
+milestone are merged. Feature 7 is this documentation cleanup; verify its own
+PR/CI/merge and local synchronization rather than inferring delivery from prose.
+The [roadmap](roadmap.md) includes a status-query command and deferred findings.
+Seven features do **not** mean the entire project is complete.
 
-- **Before:** importer-only duplicate checks used a whole-table write lock;
-  note corrections created extra observations, and raw notes could reach
-  Grafana's Inspect results through its base-table reader permission.
-- **Action:** generate and uniquely index a key over the 16 non-note source
-  fields in PostgreSQL; keep internal note versions; use conflict-aware inserts
-  without the blanket lock; restrict Grafana to a public-fields view; remove
-  runtime UPDATE/DELETE on observations, note versions and file markers.
-- **After:** a note-only correction preserves observation ID and original text,
-  appends one version, and returns `inserted: 0, skipped: 1, notes_added: 1`.
-  A changed price/date/source remains a distinct observation. No new gym facts,
-  public filters, receipt UI or comparison claims were added.
-- **Evidence:** `sh scripts/test-database.sh --ci` passed **118 tests**, seed
-  `538716`, including migration preservation/collision rollback, actual typed
-  equality, simulated observation/note hash collisions, permission profiles,
-  and independent-connection concurrency checks. The app image built with
-  warnings-as-errors. Git's tracked-change whitespace check passed.
-- **Local upgrade evidence:** no pending imports before stopping the app; a
-  private logical backup was created outside the repository and its archive
-  list read successfully (a full restore drill was not performed). Migration
-  `20261023000100` completed as the migrator. Checksums of all original source
-  fields, IDs, timestamps and import markers were identical before/after;
-  six rows/four brands remained, with six unique keys and six exactly copied
-  initial notes. Unknown historical import provenance was not invented.
-- **Public access evidence:** Grafana loaded both queries against the new view;
-  its data-source API returned four rows in both panels and graph prices
-  **209 / 1,500 / 199 / 363**, with no raw-note/key/import columns. The real
-  SCRAM-authenticated role probe passed: runtime edits/deletes and schema/owner
-  access denied; reader base/history/import/job reads denied; public view read
-  allowed; migrator temporary DDL rolled back. Running app has no owner or
-  migrator credential mounted. No visual layout change was intended or claimed
-  independently screenshot-verified in this checkpoint.
-- **Limits:** automatic migration down refuses to drop note history. A forward
-  fix or explicitly reviewed recovery is required after deployment. Owners
-  remain privileged; keys do not validate official-source truth. The existing
-  locked Decimal 3.1.1 advisory (EEF-CVE-2026-97853 / GHSA-6c27-994x-c52f) and
-  upstream Ecto xref deprecation warning remain unresolved by this feature.
+- Feature 6: [PR #14](https://github.com/FSayedio/gym-intel-uae/pull/14), merged as
+  `03cf1df47c3d3a02a9fd64eaf22e90a82ca26de9`.
+- Latest Feature 6 PR revision: `688fab5126e7ea1598c1413437449e6b95641d4d`.
+  [PR CI succeeded](https://github.com/FSayedio/gym-intel-uae/actions/runs/39918378815).
+  The earlier base-image mismatch failure was fixed, not waived.
+- [Post-merge CI succeeded](https://github.com/FSayedio/gym-intel-uae/actions/runs/39918887601)
+  for merge `03cf1df`. The source suite reported **121 passed**; the separate
+  final-image smoke check applied six migrations, processed two real synthetic
+  jobs into one observation/note/file marker, and verified non-root execution,
+  invalid-input/missing-secret rejection, graceful shutdown and scoped cleanup.
+- Feature 7 read-only local baseline: three services running, PostgreSQL healthy,
+  six applied migrations, six observations across four brands, two file markers.
+  Local main was synchronized to `03cf1df` before creating the documentation
+  branch. This is existing-data evidence, not a new import or fresh source audit.
 
-## Current display update — 22 October 2026
+Evidence belongs to the stated revision and environment. The Feature 6 results
+are not a substitute for checking the latest Feature 7 PR. No independent human
+approval, fresh-machine setup, restore drill or production readiness is claimed.
 
-The dashboard is now a single vertical advertised-monthly-charge graph, with
-a compact five-column conditions table directly below, a short visible evidence
-warning, and no filters. With both checked-in CSV snapshots imported it
-shows four offers; observation dates remain metadata, while Warehouse's unresolved
-historical access scope is disclosed. Dates and conditions remain accessible
-from the bars and linked gym names. The table shows Gym, Branch, Minimum
-commitment, Joining / admin fees, and Payment / renewal / VAT. Combined cells
-label facts separately; unknowns never become zero. Both queries select the same
-offers and order, including exclusion of newer unknown/conflicting observations.
-The graph is not a matched-contract or all-in-cost comparison. Warehouse's
-unresolved scope is also disclosed visibly rather than only in panel details.
-See `docs/local_development.md` and `docs/data_contract.md` for current behaviour.
-The filter/overview/history descriptions below document earlier review
-checkpoints and are superseded for the current display. Stored history,
-validation, Oban, PostgreSQL and role isolation remain in place.
+### Feature 7 documentation verification — 23 October 2026
 
-### Current change: before, action, after, evidence
+- Local Markdown links/anchors and shell-block syntax were checked; the archived
+  handoff body was compared with the previous Git version and preserved exactly.
+  The six documented migration versions match the migration files and live DB.
+- Read-only commands confirmed both Grafana health responses, existing completed
+  import jobs, no pending imports, and the October file's three-record marker.
+  Loaded graph/table targets structurally match the checked-in targets; their
+  datasource queries each returned four offers without internal note/key fields.
+  This was query verification, not a fresh browser/visual regression check.
+- Canonical full-row checksums of observations, note versions and import markers
+  still match the Feature 6 baseline. Six observations/four brands remain.
+  No CSV was submitted, migration applied or service recreated for this check.
+- Only Markdown changed. The source/runtime suites were not rerun for these
+  prose edits; the 121-test result above is the observed Feature 6 baseline.
+  Hosted verification of the resulting documentation PR remains a separate step.
 
-- **Before:** the original overview, filtered chart and broad history table
-  required interpreting several views; the intermediate graph-only layout hid
-  important conditions in bar details.
-- **Action:** retain one vertical graph with a right-hand gym legend; add five
-  compact conditions columns for the same selected offers, a visible evidence
-  warning, linked source/check-date metadata and graph/table parity tests.
-- **After:** a user can see a monthly charge alongside branch, commitment,
-  separate joining/admin fees, payment, renewal and membership VAT. For example,
-  GymNation's AED 209 carries a 12-month minimum while PureGym's AED 199 has no
-  minimum; neither is an all-in-cost or equivalent-benefits claim.
-- **Evidence:** `sh scripts/test-database.sh` reported **82 passed** in the
-  isolated test database. Grafana's loaded queries returned the same four offers
-  and dates, with prices 209 / 1,500 / 199 / 363. Its health endpoint reported
-  `database: ok`, and its memberships datasource reported `OK`. Safari showed
-  five table headers and four offer rows; the GymNation link resolved its
-  official source and 22 October check date. Text wrapping was visible. Git's
-  whitespace check passed. No new import or migration was run for the layout.
-- **Limits:** this is an offer explorer, not a matched-contract comparison.
-  Dates differ, source notes retain unresolved terms, and Warehouse's historical
-  access scope is unresolved. Bar-click interaction was not independently
-  reverified in this layout checkpoint; table source-link resolution was.
+## Reproduce and operate
 
-Prepared 12 September 2026. This is a local, learning-first prototype, not a
-production deployment or a comprehensive UAE gym ranking.
+Start with the [operator runbook](operator_runbook.md). It links the detailed
+[setup and credential reference](local_development.md), shows expected outputs,
+and separates queued jobs, committed data and displayed offers.
 
-## Before, action, after
+With only the two checked-in snapshots imported, expect six stored observations
+and four displayed offers:
 
-- **Before:** manually sourced CSV observations; no end-to-end display.
-- **Action:** validate CSV records, queue an immutable CSV snapshot with Oban,
-  save observations transactionally in PostgreSQL, and query them from Grafana.
-- **After:** three Dubai branch offers appear in an advertised monthly-charge
-  chart with a branch/plan/terms/source table. There is no scheduled fetching.
-- **Evidence:** on 12 September, all three services were running, PostgreSQL was
-  healthy, both dashboard SQL queries returned three rows through the reader
-  account, and the full separate-database test suite reported **40 passed**.
-  The learner confirmed the revised chart looked clean. No CI is configured.
+| Brand | Branch | Displayed monthly charge (AED) | Recorded on |
+| --- | --- | ---: | --- |
+| GymNation | Downtown Dubai | 209 | 2026-10-22 |
+| La Maison de la Masse | Al Quoz 2 | 1,500 | 2026-10-22 |
+| PureGym | Dubai Al Barsha | 199 | 2026-10-22 |
+| The Warehouse Gym | IBN Battuta Mall | 363 | 2026-09-12 |
 
-## Review version and delivery status
+These are recorded examples, not live quotes. Warehouse's historical access
+scope remains unresolved and is visibly disclosed. Commitments, fees, payment,
+renewal and VAT differ or remain unknown. Source links/dates are available from
+the bars and linked gym names. Refreshing Grafana does not collect or import data.
 
-Review branch `codex/grafana-memberships`, based on `ec9743a` (merged CSV
-importer). The dashboard delivery commit includes provisioning, reader setup,
-local development instructions, and this handoff. Identify the exact reviewed
-revision with `git rev-parse HEAD` and include it in the review report.
-Local commit, publishing the branch, and merging into main are separate steps;
-this document does not claim publication or a merge. A reviewer must receive
-this branch/revision, not assume GitHub main contains the dashboard.
+The current layout is one vertical graph with a right-hand gym legend, a compact
+five-column conditions table and an evidence warning. There are no filters or
+separate overview/history panels. Both queries select the same offers. Latest
+observations are considered per brand/branch/original-plan identity; a newer
+unknown or incompatible observation suppresses that offer, not the other gyms,
+and does not fall back to its older eligible price. Historical source records
+remain stored, even when they are not eligible for this display.
 
-## Run and reproduce
+The localhost dashboard is not remotely hosted. Reviewers need private-repository
+access and their own ARM64 Docker environment, or a screen-sharing session.
+Do not delete existing volumes to simulate a fresh setup.
 
-Use [Local development](local_development.md) for exact commands. In order:
+## Component and code map
 
-1. Generate local secrets, build the app, start PostgreSQL, configure roles,
-   and run `sh scripts/migrate.sh`, then start the full three-service stack.
-2. Role setup grants the dedicated Grafana login SELECT on `dashboard_memberships`,
-   not internal base tables or note history.
-   Run `sh scripts/verify-permissions.sh` for the role-isolation checks.
-3. Queue `data/memberships.csv`, then `data/memberships-2026-10-22.csv`, using
-   the documented enqueue command with each path. Inspect Oban job state until
-   completed; enqueue success alone is not import success.
-4. Open <http://127.0.0.1:3000/d/gym-intel-offers> on the machine running Docker.
-5. Run the full test command using **gym_intel_test**, not the development DB.
+| Component | What it does | Starting file |
+| --- | --- | --- |
+| CSV contract | Defines facts, scope, allowed values and unknowns | [Data contract](data_contract.md) |
+| CSV reader | Bounded UTF-8 reading, headers, labelled records | [membership_csv.ex](../lib/gym_intel/membership_csv.ex) |
+| Ecto changeset | Converts and validates a proposed record; does not save it | [membership.ex](../lib/gym_intel/membership.ex) |
+| Oban worker | Stores CSV contents in a durable job; runs one import per configured queue instance, up to three attempts for unexpected failures | [import_memberships.ex](../lib/gym_intel/workers/import_memberships.ex) |
+| Importer | Commits file marker, observations and note versions together | [membership_importer.ex](../lib/gym_intel/membership_importer.ex) |
+| Ecto / Postgrex | Repository/query/transaction layer and PostgreSQL connector | [repo.ex](../lib/gym_intel/repo.ex), [runtime.exs](../config/runtime.exs) |
+| PostgreSQL integrity | Generated uniqueness, append-only note history and public view | [Observation integrity](observation_integrity.md) |
+| Runtime release | Explicit migrate/enqueue helpers, separate from worker startup | [release.ex](../lib/gym_intel/release.ex), [Dockerfile](../Dockerfile) |
+| Grafana | Read-only queries over `dashboard_memberships` | [Dashboard JSON](../grafana/dashboards/memberships.json) |
+| Verification | Isolated source tests and independent final-runtime checks | [CI guide](ci.md), [test directory](../test/) |
 
-Expected after both snapshots: six stored observations across four brands,
-displaying GymNation Downtown Dubai Core **209**, La Maison de la Masse Al Quoz 2
-Monthly open gym **1,500**, PureGym Dubai Al Barsha CORE **199**, and The Warehouse
-Gym IBN Battuta Mall Light Monthly **363**, in AED per month. The first three
-displayed observations are dated 22 October; Warehouse remains 12 September.
-Unknown fees and commitments are not zero. These are recorded observations, not
-live quotes. Re-importing an identical file should not add more memberships.
+File fingerprints deduplicate identical bytes; observation keys deduplicate
+the 16 typed non-note fields across different files. Note-only corrections append
+internal versions. Unknown differs from zero. A changed price/date/source creates
+another observation. Fingerprints do not authenticate a source or prove accuracy.
 
-The localhost URL is not a remotely shareable hosted dashboard. Reviewers need
-repository access and their own running stack, or a screen-sharing session.
-Do not delete existing Docker volumes to test fresh setup; use a separate,
-isolated environment. Fresh-machine reproduction has not yet been verified.
+## Review checklist
 
-## Code reading map
+- [ ] Record the exact reviewed revision and latest CI result; do not reuse an
+  older green revision as approval. Review failures and skipped checks too.
+- [ ] Follow the runbook and report steps actually executed versus only read.
+  Check six migrations and job/data evidence, not just container startup.
+- [ ] Confirm the contract against official branch/plan evidence. This handoff
+  does not re-certify October/September facts as current or UAE-wide coverage.
+- [ ] Confirm malformed input and invalid rows cannot partially import; inspect
+  transaction, retry, overlap, collision and note-history tests.
+- [ ] Verify the graph/table selection agrees, latest incompatible evidence does
+  not silently fall back, and unknown never becomes a zero fee or commitment.
+- [ ] Check real role boundaries: runtime cannot edit/delete observations or
+  change schema; reader sees only the public view; migrator/owner credentials
+  are absent from the running app. Docker's owner remains privileged.
+- [ ] Read the [open-work register](roadmap.md#deferred-review-findings-and-operational-gaps).
+  Green CI is not proof of backup recovery, source truth or dependency safety.
 
-| Area | Files |
-| --- | --- |
-| Data meaning and provenance | `docs/data_contract.md`, `data/memberships.csv` |
-| Validation and CSV decoding | `lib/gym_intel/membership.ex`, `membership_csv.ex` |
-| Atomic import and deduplication | `lib/gym_intel/membership_importer.ex` |
-| Queue and CSV snapshot | `lib/gym_intel/workers/import_memberships.ex` |
-| Startup and database | `config/`, `lib/gym_intel/application.ex`, `repo.ex`, `priv/repo/migrations/` |
-| Runtime packaging | `Dockerfile`, `compose.yaml`, `mix.exs`, `mix.lock` |
-| Display and reader permissions | `grafana/`, `priv/grafana_reader.sql` |
-| Repeatable checks | `test/`, commands in `docs/local_development.md` |
+Return severity-ranked findings with file/line evidence, before/after examples,
+expected versus actual results, commands run and checks not performed. Separate
+blockers from optional improvements. Do not merge as part of the review.
 
-Paths abbreviated in the table share their row's stated directory.
+## Limits that must remain visible
 
-## Highest-priority review questions
+No tested restore/retention service, job pruning, abrupt-interruption recovery
+drill, multi-app load assessment, fully independent clean-machine reproduction,
+or automated browser-level regression suite. The final-runtime smoke test is not
+all of those. Only PostgreSQL currently has a Compose healthcheck.
 
-- Are the source observations faithfully transcribed and scoped to the named
-  branches/plans? Confirm unresolved commitment, joining fee, tax, and offer terms.
-- Do validation and migration constraints agree, including unknown versus zero?
-- Are malformed files rejected without partial writes? Check atomicity, retries,
-  identical-file detection, database uniqueness across the 16 non-note source
-  fields, and append-only note versions for note-only changes.
-  The extensions accept the exact legacy 13- and 15-column snapshot
-  formats as well as the current 17-column header; old missing classifications
-  stay unknown. New classifications are nullable, allowlisted independently in
-  Elixir and PostgreSQL, and matched by the filtered dashboard SQL. Review both
-  legacy queued-job compatibility and differing/unknown/conflicting term cases.
-- Are changed observations retained correctly? Changed sources are distinct
-  observations; note-only changes preserve observation ID and append internal
-  versions without losing original text. Review the migration's collision stop,
-  privilege boundary, and refusal to automatically drop note history.
-- Does the dashboard avoid misleading comparisons? The chart selects the newest
-  date with known monthly single-branch prices for every explicitly selected
-  branch/plan, preserving the prior complete set during partial refreshes.
-  The evidence history includes all dates, native payment periods and unknown
-  prices. Original plan names remain traceability, not invented equivalent
-  tiers. A separate chart requires matching access, known commitment, payment
-  structure, renewal policy and membership-price VAT basis for at
-  least two distinct brands on the overview date; it explicitly reports when
-  evidence is insufficient. Fees, tax rates, cancellation notice and benefits may still differ.
-- Can a reviewer reproduce setup, import, reader grants, and display independently?
+The previously reported Decimal 3.1.1 advisory
+`EEF-CVE-2026-97853 / GHSA-6c27-994x-c52f` remains unresolved; upstream Ecto xref
+deprecation warnings have also been observed. This PR does not reassess or upgrade
+dependencies. Builder/runtime bases are pinned, but not every downloaded package.
 
-## Limitations and remaining work
-
-- Advertised charges are **not** equivalent benefits, total contract costs, or
-  a cheapest-gym ranking. Branch and plan details remain essential evidence.
-- Three Dubai branches are not UAE-wide coverage. Attendance, equipment,
-  facilities, opening hours, and branch-footprint dashboards are not implemented.
-- Grafana anonymous access is Viewer, with a local secret for administrator
-  login. PostgreSQL requires SCRAM passwords for socket and network connections;
-  Grafana receives a separate reader password. The running app uses a limited
-  runtime account; migration credentials are mounted only for explicit tasks.
-  The bootstrap owner remains a superuser in the PostgreSQL container; anyone
-  controlling Docker or its private secret can administer the database.
-  Keep this deployment local.
-- CSV snapshots persist in job arguments; no periodic job pruning is configured.
-  File size is limited to 1 MB and queue concurrency is one per app instance.
-- Migration rollback, backup/restore, clean-machine setup, concurrent multi-app
-  load, and automated browser-level visual regression remain unverified.
-- Full tests passed with an upstream Mix xref deprecation warning; compilation
-  succeeded. No claim of CI, load testing, or production readiness is made.
-- The 22 October 2026 security-containment rebuild reported a Hex advisory for
-  Decimal 3.1.1 (EEF-CVE-2026-97853). The build succeeded; advisory assessment
-  and dependency remediation remain pending as separate follow-up work.
-
-## Dashboard-correctness revision — 22 October 2026
-
-- **Before:** global latest-date filtering could erase monthly comparisons,
-  unknown-price records were hidden, and branded plan names did not explain
-  equivalent or different terms.
-- **Action:** retain the last complete selected monthly-price set, display all
-  recorded evidence with normalized condition labels, and add a known-commitment
-  filter plus an explicit two-distinct-brand gate. Keep original plan names;
-  do not infer equivalent tiers from them.
-- **After:** the historical overview remains available, while the filtered
-  charge comparison is empty when its criteria are not supported. It is a
-  comparison on access/billing/commitment only, not equivalent benefits or total
-  costs. Current stored observations support no qualifying two-brand group.
-- **Evidence:** the separate-database suite reports **71 passed**, including
-  actual provisioned SQL for price-date preservation, readable conditions,
-  unknowns, conflicting terms, commitment selection and comparison availability.
-  Synthetic tests do not certify real offer terms. Runtime queries through the
-  actual Grafana reader returned all four panel responses successfully: three
-  overview prices, three history rows, an empty filtered result and its explicit
-  availability message. Browser inspection confirmed readable original/normalized
-  terms, the two commitment options, zero matches for No minimum commitment and
-  one for 3 months, both without filtered bars. This was a manual visual check,
-  not an automated visual-regression suite. Development data stayed at three
-  observations with checksum `6137f9dbf625f612f60bc8c735a641e9`.
-
-The read-only official-source audit is recorded in `docs/data_contract.md`.
-It found different commitments, additional GymNation admin fees and unresolved
-Warehouse access wording. Those findings have not been imported or backdated;
-the development data remains three 12 September observations. At that checkpoint,
-structured admin fees, tax treatment and broader benefit normalization remained
-future work; the later revisions below describe the implemented extensions.
-This section describes local work, not a commit, push, PR or merge confirmation.
-
-### Feature 2 — consolidated scope and completion gates
-
-Feature 2 is **dashboard correctness and evidence-based comparability**. Its
-purpose is to help users compare documented gym offers without presenting
-different or unsupported terms as equivalent. A correct empty state is a safety
-result, not proof that a useful real-data comparison has been delivered.
-
-- **Before:** the three historical prices could imply equivalent memberships;
-  exact public prices from additional operators could be mistaken for approved
-  comparable offers.
-- **Action:** preserve complete historical price sets, retain original plan
-  names, label documented conditions, enforce known matching terms, extend the
-  source contract without guessing historical values, and audit the identified
-  public-source pool against those rules.
-- **After:** the overview and evidence history remain inspectable; the filtered
-  chart refuses unsupported groups. The audit distinguishes published-price
-  evidence, individually classifiable offers and approved multi-operator groups.
-- **Evidence:** the last full separate-database suite reported **103 passed**
-  at the VAT/admin-fee checkpoint below. The [13-operator source audit](data_contract.md#bounded-pool-audit-and-final-count--22-october-2026)
-  records **10 operators with exact public price evidence, 3 without an applicable
-  verified price on the checked routes, and 0 approved multi-operator strict
-  cohorts**. GymNation and PureGym are clear classification candidates, but
-  minimum terms of 12 and 0 months place them in different groups. These counts
-  are a manual research tally, not imported records or new live SQL results.
-
-#### Progress and remaining work
-
-The checklist separates implementation evidence from delivery and data readiness.
-Checked technical items were verified at the checkpoints documented below. The
-initial checklist-only update did not rerun tests; the subsequent technical
-review checkpoint records a fresh run. Neither step imported new offers.
-
-- [x] Preserve the last complete selected monthly-price date during partial or
-  incompatible refreshes; disclose that the overview is historical.
-- [x] Keep original marketing names while displaying shared condition labels
-  and all recorded source/terms evidence.
-- [x] Require known matching access, monthly billing, minimum commitment,
-  payment structure, renewal policy and membership-price VAT basis, with at least
-  two distinct operators and explicit insufficient-evidence behavior.
-- [x] Support the nullable payment/renewal and VAT/admin extensions through
-  validation, additive migrations, legacy CSV/job compatibility and deduplication.
-- [x] Verify the implemented behavior with the separate-database suite and
-  recorded runtime, reader-permission and manual browser checks.
-- [x] Complete the bounded 13-operator public-source eligibility audit and
-  record exclusion reasons, conflicts and unverified fields.
-- [ ] Establish a real comparison-ready group: at least two distinct operators
-  with sufficiently verified evidence satisfying the same approved comparison
-  rules. Collect fresh observations in a common cycle, import deliberately,
-  update the explicit selected offer set and regression fixtures, then verify
-  the displayed result against those sources. This gate is **not met**.
-- [ ] Complete final review and delivery: review the full diff, rerun appropriate
-  checks after any further code/data edits, then learner-controlled staging,
-  local commit, push, PR/review/merge and local-main update. These remain distinct
-  steps; no delivery operation is authorized by this checklist.
-
-Feature 2 milestones: **6 of 8 complete**. This is a checklist count, not an
-estimate of effort, remaining time or overall project completion. Technical work
-is available for review locally; **the real-data comparison gate remains unmet**,
-and this branch has not been committed, pushed or merged.
-
-#### Constraints carried forward from the audit
-
-- Do not promise ten comparable gyms: ten is a public-price research count.
-  The dashboard still displays the original three historical operators; no audit
-  findings were imported or backdated.
-- An optional minimum-term threshold, such as at most one month, remains a
-  proposal, not implemented behavior. Keeping all other current gates, the audit
-  still approves no multi-operator group under that proposal. Broadening duration
-  does not resolve ambiguous scope, VAT or renewal evidence.
-- Do not quietly loosen matching rules, treat unknown fees as zero, infer
-  equivalence from branded names, or treat equal billing periods as equal
-  contracts. Comparison on these fields still does not establish equal benefits,
-  cancellation terms or all-in costs.
-- Continue with public sources only. Stop at personal-details, enquiry,
-  consent or purchase boundaries; do not use outreach to obtain missing prices.
-- If public evidence cannot support the comparison-ready group, report that
-  limitation and obtain an explicit product-scope decision before changing the
-  completion claim or the dashboard's question. Shipping the technical safeguards
-  with this limitation is not the same as delivering a verified comparison.
-
-## Payment and renewal revision — 22 October 2026
-
-- **Before:** billing duration alone could not distinguish a purchased prepaid
-  month from a monthly recurring subscription, and renewal lived only in notes.
-- **Action:** add independent nullable `payment_structure` and `renewal_policy`
-  fields, allowlists in Elixir/PostgreSQL, backward-compatible CSV reading,
-  evidence columns and known-value Grafana selectors. No classifications were
-  inferred from prices, plan names or billing periods.
-- **After:** strict chart groups must match both new known classifications as
-  well as access, billing and commitment. Unknown/conflicting evidence is
-  excluded, not guessed. Original 13-column snapshots still execute, while new
-  CSVs can use the exact 15-column header. Row deduplication compares all 15
-  source fields; new evidence is retained without overwriting historical rows.
-- **Evidence:** the separate test-database suite reports **89 passed**, including legacy jobs,
-  new classifications, database allowlists, deduplication, independent filters,
-  unknown/conflicting evidence and SQL quoting. The additive migration ran on
-  development; all three original observations retained their existing values
-  and have NULL in both new fields. A canonical checksum excluding the added
-  fields was `3266eb3b07735aabef6841a96f496f5f` both before and after. Live browser
-  inspection confirmed both selectors, both Unknown evidence columns and zero
-  qualifying offers under recurring/automatic and prepaid/non-automatic choices.
-  Grafana's memberships data source reported `Database Connection OK` and exactly
-  three services remained running, with PostgreSQL healthy.
-
-These changes remain local and unstaged on `codex/dashboard-correctness`.
-The existing CSV is unchanged; no new source observations have been imported.
-Tax, admin fees, cancellation notice and product/access benefits are not newly
-normalized by these two fields. Broader source eligibility and chart selection
-remain deliberate next steps, not automatic consequences of this migration.
-
-## VAT and admin-fee revision — 22 October 2026
-
-- **Before:** the contract could not distinguish a VAT-included quoted membership
-  price from a VAT-excluded one, and separate onboarding admin charges lived only
-  in notes. A missing joining/admin fee could be mistaken for free entry.
-- **Action:** add independent nullable `price_vat_status` and `admin_fee_aed`
-  fields, Elixir/PostgreSQL allowlists and nonnegative fee checks, backward-compatible
-  13/15/17-column CSV reading, separate evidence columns and a VAT-basis selector.
-  The flag covers the membership price only, not the tax treatment of other fees.
-- **After:** filtered monthly groups require the same known VAT basis; unknown
-  or conflicting evidence is excluded. The chart title shows the selected VAT
-  basis. Excluded-VAT amounts stay pre-VAT, with no guessed rate or conversion.
-  Joining/admin charges stay separate and are not added to the bars. No all-in,
-  first-payment or complete mandatory-fee calculation is claimed.
-- **Evidence:** **103 tests passed** in `gym_intel_test`, including legacy queued
-  snapshots, VAT/admin validation and database constraints, 17-field deduplication,
-  equal numbers with different VAT bases, unknown/conflicting tax evidence and
-  safe SQL-string interpolation. All five development migration versions are
-  present. The existing three observations retain their original values; the
-  canonical checksum excluding the four added fields is unchanged at
-  `3266eb3b07735aabef6841a96f496f5f`. New VAT/admin fields remain NULL for all
-  three historical records. Browser inspection confirmed both VAT choices, the
-  interpolated VAT-excluded title, Unknown VAT/admin evidence and zero qualifying
-  offers. Grafana's memberships connection returned `Database Connection OK`;
-  three services are running and PostgreSQL is healthy. Formatting and Git
-  whitespace checks passed; the source CSV is unchanged. The role-permission
-  regression script also passed: runtime DDL/deletes/role escalation and reader
-  writes/job access remain denied; the migrator probe rolled back and privileged
-  secrets remain absent from the running app.
-
-The runtime-account `mix ecto.migrations` listing was denied because Ecto attempts
-schema DDL. This was not fixed by expanding privileges: the documented verification
-now uses read-only SELECT on `schema_migrations`. Actual migrations continue to
-use the dedicated migrator task. No database was dropped or recreated.
-
-These local changes are still unstaged on `codex/dashboard-correctness`, with no
-commit, push, PR or merge for this branch. No new source observations were imported.
-Other mandatory charges, per-fee tax treatment, notice rules and benefit/access
-normalization remain separate work. Public-source candidates are not automatically
-approved or selected for the dashboard by adding these fields.
-
-## Feature 2 technical review checkpoint — 22 October 2026
-
-- **Before:** the implementation and bounded source audit were recorded locally,
-  but review needed current execution evidence rather than relying only on earlier
-  passing results.
-- **Action:** inspect the pending implementation, both new migrations and their
-  tests; rebuild the app image; run the complete isolated-database suite; check
-  changed-file formatting and role permissions; query Grafana's health endpoints
-  and execute all four loaded dashboard SQL targets through its memberships data
-  source. Do not import research findings or loosen matching rules.
-- **After:** the implementation is technically verified for review. The
-  insufficient-data result remains intentional and the real comparison-ready
-  group is still unestablished. Feature 2 remains **6 of 8 milestones**, not complete.
-- **Evidence:**
-  - `docker compose build app` succeeded, reusing the cached compile layer that
-    runs `mix compile --warnings-as-errors`.
-  - `sh scripts/test-database.sh` reported **103 passed**, seed `342739`, using
-    `gym_intel_test`. Its test helper refuses any other database. Upstream Mix
-    xref deprecation warnings appeared during dependency compilation; tests
-    still passed. This is not a new dependency-advisory assessment.
-  - `mix format --check-formatted` passed for every changed/new Elixir source,
-    migration and test file. A broader check including historical migrations
-    **failed** on the unchanged `20260912000100_create_memberships.exs`. That
-    pre-existing file was left untouched; repository-wide formatting is not
-    claimed to pass.
-  - `sh scripts/verify-permissions.sh` passed all runtime/reader denial checks,
-    the migrator's rolled-back probe and privileged-secret absence checks.
-  - Grafana `/api/health` returned `database: ok`. The memberships data-source
-    health endpoint separately returned `Database Connection OK`.
-  - Executing the four loaded provisioned targets via Grafana `/api/ds/query`
-    returned successful responses: overview **3** rows (209/199/363, all observed
-    `2026-09-12`), evidence **3** rows, filtered chart **0** rows, and status
-    **Not enough comparable offers — 0 gyms match; at least 2 required**. This
-    exercised the default single-branch/zero-minimum/recurring/automatic/
-    VAT-included selection. Other combinations are covered by the isolated SQL
-    regression tests, not newly claimed live source observations.
-  - Development memberships remained **3** rows. A checksum of all stored
-    membership columns, ordered by ID, stayed
-    `d42250384f950b38075b03468fca7162` before and after verification. This is a
-    different checksum definition from the earlier original-source-fields-only
-    check; compare like definitions, not the two hashes to each other.
-  - SHA-256 checks for the two changed application source files and two new
-    migration files matched between the workspace and running app container.
-  - Exactly three services remained running, PostgreSQL healthy. The source CSV
-    was unchanged and `git diff --check` passed.
-
-No fresh automated browser-level visual test, migration rollback, backup/restore,
-clean-machine reproduction, load test or CI run was performed. The pre-existing
-README also still describes the app as unbuilt; that introductory documentation
-needs a separate accuracy cleanup and is not evidence of current runtime state.
-These results do not close the public-source data gate. All Feature 2 changes
-remain unstaged on `codex/dashboard-correctness`; nothing was committed, pushed,
-opened as a PR or merged in this review checkpoint.
-
-## Requested reviewer output
-
-Return findings ranked by severity, with file/line evidence, a reproducible
-example, expected versus actual behavior, and a suggested minimal correction.
-Separate correctness/security blockers from optional polish. Report commands
-actually run and any checks not performed. Do not merge as part of the review.
+CSV contents persist in Oban arguments without scheduled pruning; never submit
+secrets. Grafana anonymous access is Viewer, not Admin. Password files are local
+Compose mounts, not encrypted secret management. Merge governance is manual,
+not an enforced protected-branch rule. Keep the stack local.
