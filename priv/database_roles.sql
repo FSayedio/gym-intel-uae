@@ -57,6 +57,8 @@ BEGIN
       ('membership_imports', 'SELECT, INSERT'),
       ('oban_jobs', 'SELECT, INSERT, UPDATE, DELETE'),
       ('oban_peers', 'SELECT, INSERT, UPDATE, DELETE'),
+      ('source_check_states', 'SELECT, INSERT, UPDATE'),
+      ('source_check_reports', 'SELECT, INSERT, DELETE'),
       ('schema_migrations', 'SELECT')
     ) AS grants(table_name, privileges)
   LOOP
@@ -70,7 +72,7 @@ BEGIN
   FOR object IN
     SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relkind = 'S'
-      AND c.relname IN ('memberships_id_seq', 'oban_jobs_id_seq')
+      AND c.relname IN ('memberships_id_seq', 'oban_jobs_id_seq', 'source_check_reports_id_seq')
   LOOP
     EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE public.%I TO gym_intel_app', object.relname);
   END LOOP;

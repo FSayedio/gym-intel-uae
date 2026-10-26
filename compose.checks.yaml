@@ -6,3 +6,4 @@ services:
       target: checks
     environment:
       MIX_ENV: test
+      SOURCE_CHECKS_ENABLED: "false"

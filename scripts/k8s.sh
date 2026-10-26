@@ -23,11 +23,12 @@ case "$action" in
   start) kube_resume; kube scale deployment/grafana --replicas=1; kube rollout status deployment/grafana --timeout=180s ;;
   pause) kube_pause ;;
   import) exec sh scripts/kubernetes/task.sh enqueue "$@" ;;
+  source-check|source-status|source-ack) exec sh scripts/kubernetes/task.sh "$action" "$@" ;;
   update) test "$#" = 1; exec sh scripts/update-dashboard.sh "$1" --directory "$backup_root" ;;
   backup) exec sh scripts/backup-database.sh --directory "$backup_root" ;;
   permissions) exec sh scripts/verify-permissions.sh ;;
   tests|dashboard-check)
     if [ "$action" = tests ]; then exec sh scripts/kubernetes/checks.sh tests; fi
     exec sh scripts/kubernetes/checks.sh dashboard ;;
-  *) echo 'Usage: sh scripts/k8s.sh bootstrap|prepare|roles|migrate|start|pause|status|psql|kubectl|import CSV|update CSV|backup|permissions' >&2; exit 2 ;;
+  *) echo 'Usage: sh scripts/k8s.sh bootstrap|prepare|roles|migrate|start|pause|status|psql|kubectl|import CSV|update CSV|backup|permissions|source-check|source-status|source-ack ID HASH' >&2; exit 2 ;;
 esac
