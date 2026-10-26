@@ -32,6 +32,62 @@ defmodule GymIntel.Release do
     :ok
   end
 
+  @doc "Print the two retained source-check reports without starting workers or fetching websites."
+  def source_check_status do
+    with_source_repo(fn ->
+      IO.puts(
+        Jason.encode!(
+          %{
+            reports: GymIntel.SourceMonitor.reports(),
+            baselines: GymIntel.SourceMonitor.states()
+          },
+          pretty: true
+        )
+      )
+    end)
+  end
+
+  @doc "Queue an optional immediate source check; execution belongs to the running app."
+  def check_sources do
+    with_source_repo(fn ->
+      {:ok, _} = Application.ensure_all_started(:oban)
+      {:ok, oban} = Oban.start_link(repo: Repo, queues: false, plugins: false, peer: false)
+
+      try do
+        {:ok, job} = Oban.insert(GymIntel.Workers.CheckSources.new(%{}))
+        IO.puts("Source check queued: #{job.id}. Read source-check status after it finishes.")
+      after
+        Supervisor.stop(oban)
+      end
+    end)
+  end
+
+  @doc "Acknowledge exactly the reviewed page hash; never changes membership facts."
+  def acknowledge_source_check do
+    with_source_repo(fn ->
+      case GymIntel.SourceMonitor.acknowledge(
+             System.fetch_env!("SOURCE_CHECK_ID"),
+             System.fetch_env!("SOURCE_CHECK_HASH")
+           ) do
+        :ok -> IO.puts("Page baseline acknowledged; membership facts remain unchanged.")
+        {:error, _} -> raise "Source baseline changed or is missing; review current status again"
+      end
+    end)
+  end
+
+  defp with_source_repo(fun) do
+    Application.load(:gym_intel)
+    {:ok, _} = Application.ensure_all_started(:ecto_sql)
+    {:ok, _} = Application.ensure_all_started(:postgrex)
+    {:ok, repo} = Repo.start_link(pool_size: 1, log: false)
+
+    try do
+      fun.()
+    after
+      Supervisor.stop(repo)
+    end
+  end
+
   def enqueue do
     path = System.fetch_env!("IMPORT_CSV_PATH")
     Application.load(:gym_intel)

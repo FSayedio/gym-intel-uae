@@ -26,7 +26,9 @@ defmodule GymIntel.MixProject do
       {:postgrex, "~> 0.22.4"},
       {:oban, "~> 2.24.1"},
       {:jason, "~> 1.4"},
-      {:nimble_csv, "~> 1.3.0"}
+      {:nimble_csv, "~> 1.3.0"},
+      {:finch, "~> 0.24.0"},
+      {:floki, "~> 0.38.4"}
     ]
   end
 end

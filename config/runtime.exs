@@ -1,5 +1,12 @@
 import Config
 
+# Explicit opt-in in the real deployment. Test/recovery release containers do
+# not contact external sites just because they start the application.
+unless System.get_env("SOURCE_CHECKS_ENABLED") == "true" and config_env() != :test do
+  config :gym_intel, Oban, plugins: false
+  if config_env() != :test, do: config(:gym_intel, Oban, queues: [imports: 1])
+end
+
 database_password =
   System.fetch_env!("DATABASE_PASSWORD_FILE")
   |> File.read!()

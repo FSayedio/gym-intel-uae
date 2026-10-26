@@ -29,6 +29,7 @@ remain separate from these implementation instructions.
 - [Read-only update status and automatic two-report retention](docs/update_status.md)
 - [Detailed local configuration and credentials](docs/local_development.md)
 - [Data contract and source limitations](docs/data_contract.md)
+- [Weekly source checks and internal reports](docs/source_checks.md)
 - [CI checks and manual review policy](docs/ci.md)
 - [Observation identity and internal note history](docs/observation_integrity.md)
 - [Current reviewer handoff](docs/reviewer_handoff.md)

@@ -1,5 +1,9 @@
 # Local development
 
+The running application also supports [weekly official-source checks](source_checks.md).
+These create internal review reports; Grafana refresh still only reads stored
+membership facts and does not trigger a website check or a CSV import.
+
 Detailed configuration reference. Start with the shorter
 [operator runbook](operator_runbook.md) for the current everyday sequence and
 expected results; use the [reviewer handoff](reviewer_handoff.md) for dated

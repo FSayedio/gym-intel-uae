@@ -33,3 +33,5 @@ mix ecto.create
 mix ecto.migrate
 echo "Running all tests, including PostgreSQL and dashboard SQL tests"
 mix test --no-start
+echo "Checking browser request boundaries and plan readiness"
+node --test test/source_monitor/render_test.mjs

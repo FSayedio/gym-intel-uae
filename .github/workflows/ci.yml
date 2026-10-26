@@ -131,6 +131,9 @@ jobs:
           export RELEASE_TEST_OWNER_PASSWORD_FILE="$RUNNER_TEMP/gym-intel-ci-database-password"
           sh scripts/verify-release.sh
 
+      - name: Verify packaged browser with synthetic JavaScript and no network
+        run: sh scripts/verify-renderer.sh
+
       - name: Verify backup recovery, rolling-two updates and saved status with synthetic data
         run: |
           docker pull --platform linux/arm64 grafana/grafana:13.2

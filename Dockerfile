@@ -17,7 +17,7 @@ COPY priv ./priv
 
 FROM source AS checks
 ENV MIX_ENV=test
-RUN apk add --no-cache openssl
+RUN apk add --no-cache openssl nodejs
 COPY .formatter.exs ./
 COPY test ./test
 COPY scripts ./scripts
@@ -34,6 +34,7 @@ RUN cat /etc/alpine-release && test "$(cat /etc/alpine-release)" = 3.24.3 \
 # Match the builder's musl/Alpine runtime, without shipping Mix/Hex/Rebar.
 FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS runtime
 RUN apk add --no-cache libstdc++ ncurses-libs libcrypto3 libssl3 liblksctp ca-certificates \
+      firefox geckodriver nodejs tini \
     && addgroup -S -g 10001 gym_intel \
     && adduser -S -D -H -u 10001 -G gym_intel gym_intel
 WORKDIR /app
@@ -43,4 +44,4 @@ ENV HOME=/tmp \
     RELEASE_DISTRIBUTION=none \
     ERL_CRASH_DUMP=/tmp/gym-intel-crash.dump
 USER 10001:10001
-CMD ["bin/gym_intel", "start"]
+CMD ["/sbin/tini", "-g", "--", "bin/gym_intel", "start"]

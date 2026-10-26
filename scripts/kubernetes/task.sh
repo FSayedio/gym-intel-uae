@@ -8,6 +8,17 @@ cd "$project_dir"
 kube_guard
 action=${1:-}
 case "$action" in
+  source-check|source-status|source-ack)
+    role=gym_intel_app; secret=app-password; password=postgres_app_password
+    case "$action" in
+      source-check) test "$#" = 1; expression='GymIntel.Release.check_sources()' ;;
+      source-status) test "$#" = 1; expression='GymIntel.Release.source_check_status()' ;;
+      source-ack)
+        test "$#" = 3
+        printf '%s\n' "$2" | LC_ALL=C grep -Eq '^[a-z_]{1,50}$'
+        printf '%s\n' "$3" | LC_ALL=C grep -Eq '^[0-9a-f]{64}$'
+        expression='GymIntel.Release.acknowledge_source_check()' ;;
+    esac ;;
   migrate) role=gym_intel_migrator; secret=migrator-password; password=postgres_migrator_password; expression='GymIntel.Release.migrate()' ;;
   update|enqueue)
     test "$#" = 2
@@ -17,7 +28,7 @@ case "$action" in
     test "$(wc -c < "$2" | tr -d ' ')" -le 1000000
     role=gym_intel_app; secret=app-password; password=postgres_app_password
     expression="GymIntel.Release.$action()" ;;
-  *) echo 'Expected migrate, update or enqueue' >&2; exit 2 ;;
+  *) echo 'Expected migrate, update, enqueue, source-check, source-status or source-ack' >&2; exit 2 ;;
 esac
 runtime_image=$(cat "$kube_image_file")
 case "$runtime_image" in gym-intel-runtime:k8s-*) ;; *) exit 2 ;; esac
@@ -76,7 +87,12 @@ EOF
 kube wait --for=create pod -l "job-name=$task_name" --timeout=60s
 kube wait --for=condition=Ready pod -l "job-name=$task_name" --timeout=90s
 task_pod=$(kube get pod -l "job-name=$task_name" -o 'jsonpath={.items[0].metadata.name}')
-if [ "$action" != migrate ]; then
+if [ "$action" = enqueue ] || [ "$action" = update ]; then
   kube exec -i "$task_pod" -- sh -c 'umask 077; cat > /tmp/input.csv' < "$2"
 fi
-kube exec "$task_pod" -- sh -ec 'ulimit -n 65536; exec bin/gym_intel eval "$1"' operator "$expression"
+if [ "$action" = source-ack ]; then
+  kube exec "$task_pod" -- env SOURCE_CHECK_ID="$2" SOURCE_CHECK_HASH="$3" \
+    sh -ec 'ulimit -n 65536; exec bin/gym_intel eval "$1"' operator "$expression"
+else
+  kube exec "$task_pod" -- sh -ec 'ulimit -n 65536; exec bin/gym_intel eval "$1"' operator "$expression"
+fi

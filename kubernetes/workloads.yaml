@@ -85,7 +85,7 @@ spec:
         - name: app
           image: gym-intel-runtime:kubernetes
           imagePullPolicy: Never
-          command: [sh, -ec, 'ulimit -n 65536; exec bin/gym_intel start']
+          command: [sh, -ec, 'ulimit -n 65536; exec /sbin/tini -g -- bin/gym_intel start']
           envFrom:
             - configMapRef: {name: app-settings}
           resources:
