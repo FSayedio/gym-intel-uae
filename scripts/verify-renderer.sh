@@ -4,7 +4,7 @@ set -eu
 project_dir=$(cd "$(dirname "$0")/.." && pwd)
 runtime_image=${RELEASE_IMAGE:-gym-intel-runtime:local}
 docker run --rm --init --network none --read-only \
-  --tmpfs /tmp:rw,nosuid,size=64m --memory 512m --cpus 1 --pids-limit 512 \
+  --tmpfs /tmp:rw,nosuid,size=64m --memory 768m --memory-swap 768m --cpus 1 --pids-limit 512 \
   --cap-drop ALL --security-opt no-new-privileges \
   -v "$project_dir/test/source_monitor/render_smoke.mjs:/fixture/render_smoke.mjs:ro" \
   "$runtime_image" sh -ec '
