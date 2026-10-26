@@ -8,10 +8,13 @@ every Monday at **09:00 Asia/Dubai (05:00 UTC)**. It checks seven fixed official
 routes for the four working gym brands. No new service or external account is
 required. A stopped application misses that week's slot; there is no catch-up.
 
-This checks public page text, not membership accuracy. An old observation can
+This checks public page text, not membership accuracy. PureGym's fixed Al Barsha
+joining route is loaded in a temporary headless Firefox browser so its JavaScript
+can populate both monthly plan cards. The other six routes use plain HTTP.
+An old observation can
 still be accurate; age alone does not prove a price changed. Equally, an unchanged
-page does not prove a JavaScript selector's current plan, fees or conditions are
-unchanged. The monitor never imports prices, changes `observed_on`, certifies an
+page does not prove all checkout fees, exclusions or conditions are unchanged.
+The monitor never imports prices, changes `observed_on`, certifies an
 offer, or changes Grafana's comparison rules. Updating gym facts still requires
 reviewing the official offer and submitting a validated CSV through the existing
 update workflow.
@@ -74,16 +77,45 @@ and Kind as competing production pipelines.
   default to disabled. A one-off submission process disables its own plugins
   and queues; only the long-running application performs jobs.
 - `SourceMonitor.Sources` contains the fixed reviewed routes. Arbitrary submitted
-  URLs, discovery/crawling, authenticated access and form submissions are absent.
-  Redirects are reported for review, never followed automatically.
-- Finch verifies HTTPS certificates. Each fetch has a 25-second outer deadline,
-  a 2 MB response cap and a 100 KB normalized-text cap. Seven sequential reads
-  fit inside a four-minute worker timeout. Scripts, styles, navigation and
+  URLs, discovery/crawling, authenticated access and membership form submissions
+  are absent. Plain HTTP redirects are reported for review. The browser rejects
+  a result if its final URL differs from the exact pinned `center=8002` route.
+- Finch verifies HTTPS certificates. Each plain HTTP fetch has a 25-second outer deadline,
+  a 2 MB response cap and a 100 KB normalized-text cap. Six HTTP reads and one
+  browser read fit inside a four-minute worker
+  timeout. Scripts, styles, navigation and
   footers are excluded from comparison; unrelated body changes may still flag
   review. Expected context checks catch some empty/dynamic selector responses,
   but cannot establish all offer facts.
-- Source pages are untrusted evidence. Text is stored as data and printed as
-  JSON; page content is never executed or used as instructions.
+- The browser has a 60-second work deadline, bounded shutdown and a 70-second
+  Elixir deadline. It waits for separate numeric monthly prices and joining fees
+  on both Core and Plus cards. Missing/loading cards fail rather than producing
+  an empty baseline. The visible plan page does not print the branch name;
+  `center=8002` is the explicitly pinned Al Barsha route, not an inferred branch
+  name from the words Core or Plus. No other centre URL is accepted.
+- The rendered page's HTTP(S) requests allow only the exact `puregym-arabia.exerp.site` host.
+  GET requests and the site's exact read-only anonymous plan-lookup POST are
+  permitted; other methods, credentials in URLs and external origins are blocked.
+  Inline image data is not treated as an outbound HTTP request. TLS validation
+  and Firefox's default browser protections stay enabled. No extra Linux
+  capabilities, privilege escalation or `--no-sandbox` flags are added.
+  WebRTC and service workers are disabled. This HTTP(S) page interceptor
+  is not a container-wide network firewall; WebSockets and browser-internal
+  networking are separate boundaries. No claim of complete network isolation
+  is made for live runs.
+- Firefox, geckodriver, Node and Tini are packaged in the existing runtime image;
+  there is no fourth service or npm dependency. This increases image size.
+  Browser profiles are per-run under `/tmp`; normal completion, timeout and
+  loss of the parent process close the browser process group and remove the
+  profile. Tini reaps orphaned processes. The app's 512 MiB/one CPU/64 MiB temporary
+  storage limits remain unchanged; a resource failure is not a verified result.
+  The browser uses multiple processes and threads. If an operator adds a PID
+  limit, allow at least the tested 512; a 256-task test limit prevented startup
+  alongside the Elixir runtime. This is a tested allowance, not a guarantee for
+  every future browser version or page.
+- Source pages are untrusted evidence. PureGym's JavaScript executes inside the
+  browser with its protections enabled. Returned text is stored as data and
+  printed as JSON; the importer never executes that text or treats it as instructions.
 
 Backups already snapshot all public tables, including these new tables. Existing
 backup/update guards reject unfinished Oban jobs. If a check overlaps an operator
@@ -99,7 +131,11 @@ Synthetic HTML tests cover text normalization, changed prices, empty selectors,
 challenge pages, redirects and response limits. Isolated PostgreSQL tests cover
 acknowledgements, stale hashes, failures preserving baselines, pending evidence
 surviving report rotation, scoped job retention and transactional rollback.
-They assert membership data is unchanged. Tests do not contact gym websites.
+They assert membership data is unchanged. Node unit tests cover allowed requests
+and complete plan-card detection. `RELEASE_IMAGE=... sh scripts/verify-renderer.sh`
+runs the final non-root browser image against synthetic JavaScript, with external
+network access disabled, and checks timeout/interruption cleanup and memory usage.
+Tests do not contact gym websites.
 Live smoke checks, when performed, are page-availability evidence only.
 
 Deploy this code through the normal Kubernetes build/migration/deployment flow

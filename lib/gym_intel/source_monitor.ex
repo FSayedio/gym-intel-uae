@@ -1,12 +1,12 @@
 defmodule GymIntel.SourceMonitor do
   @moduledoc "Internal weekly change reports. Never imports data or advances membership observation dates."
   import Ecto.Query
-  alias GymIntel.{Repo, SourceMonitor.Content, SourceMonitor.HTTP, SourceMonitor.Sources}
+  alias GymIntel.{Repo, SourceMonitor.Content, SourceMonitor.Fetcher, SourceMonitor.Sources}
 
   @worker "GymIntel.Workers.CheckSources"
 
   def check(opts \\ []) do
-    fetch = Keyword.get(opts, :fetch, &HTTP.fetch/1)
+    fetch = Keyword.get(opts, :fetch, &Fetcher.fetch/1)
     sources = Keyword.get(opts, :sources, Sources.all())
     now = Keyword.get(opts, :now, DateTime.utc_now())
     job_id = Keyword.get(opts, :job_id)
@@ -118,6 +118,7 @@ defmodule GymIntel.SourceMonitor do
       "gym" => source.gym,
       "label" => source.label,
       "url" => source.url,
+      "fetch_mode" => if(source.url == Sources.rendered_url(), do: "browser", else: "http"),
       "coverage" => source.coverage,
       "offer_verified" => false
     }
@@ -182,6 +183,7 @@ defmodule GymIntel.SourceMonitor do
   end
 
   defp reason_text({:http_status, code}), do: "HTTP #{code}; redirects are not followed"
+  defp reason_text({:browser, reason}) when is_binary(reason), do: reason
   defp reason_text(reason) when is_atom(reason), do: Atom.to_string(reason)
   defp reason_text(_), do: "source_check_failed"
 end

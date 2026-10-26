@@ -23,8 +23,9 @@ defmodule GymIntel.SourceMonitor.Sources do
       gym: "PureGym",
       label: "Al Barsha joining selector",
       url: "https://puregym-arabia.exerp.site/join/plan?center=8002",
-      anchors: ["al barsha", "core"],
-      coverage: "Interactive selector; server HTML may omit the selected price."
+      anchors: ["core", "plus", "per month", "joining fee"],
+      coverage:
+        "Rendered monthly Core/Plus cards at the pinned Al Barsha centre=8002 route; checkout and full terms still require review."
     },
     %{
       id: "puregym_terms",
@@ -62,4 +63,5 @@ defmodule GymIntel.SourceMonitor.Sources do
 
   def all, do: @sources
   def urls, do: Enum.map(@sources, & &1.url)
+  def rendered_url, do: Enum.find(@sources, &(&1.id == "puregym_offer")).url
 end
