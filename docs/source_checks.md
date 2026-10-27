@@ -107,8 +107,12 @@ and Kind as competing production pipelines.
   there is no fourth service or npm dependency. This increases image size.
   Browser profiles are per-run under `/tmp`; normal completion, timeout and
   loss of the parent process close the browser process group and remove the
-  profile. Tini reaps orphaned processes. The app's 512 MiB/one CPU/64 MiB temporary
-  storage limits remain unchanged; a resource failure is not a verified result.
+  profile. Tini reaps orphaned processes. The Kubernetes app has a 768 MiB memory
+  limit, one CPU and 64 MiB temporary storage. The previous 512 MiB limit caused
+  memory pressure and a rendered-page timeout during deployment verification;
+  an additional diagnostic Elixir process also triggered an OOM restart.
+  The offline browser test explicitly disables swap to avoid hiding memory
+  pressure behind Docker's swap allowance. A resource failure is not a verified result.
   The browser uses multiple processes and threads. If an operator adds a PID
   limit, allow at least the tested 512; a 256-task test limit prevented startup
   alongside the Elixir runtime. This is a tested allowance, not a guarantee for

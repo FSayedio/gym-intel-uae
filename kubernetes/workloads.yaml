@@ -90,7 +90,7 @@ spec:
             - configMapRef: {name: app-settings}
           resources:
             requests: {cpu: 100m, memory: 128Mi}
-            limits: {cpu: "1", memory: 512Mi}
+            limits: {cpu: "1", memory: 768Mi}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
