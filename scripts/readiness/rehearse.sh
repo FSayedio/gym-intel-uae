@@ -58,6 +58,9 @@ psql_owner --dbname="$test_database" >/dev/null <<'SQL'
 CREATE FUNCTION public.readiness_gate() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF NEW.brand_name = 'TEST ONLY INTERRUPTED' THEN
+    -- This gate must wait for the harness to kill the worker rather than
+    -- exercising the production lock-wait error path first. Fixture only.
+    PERFORM set_config('lock_timeout', '0', true);
     PERFORM pg_advisory_xact_lock(18441, 1);
   END IF;
   RETURN NEW;
@@ -112,10 +115,19 @@ test "$(psql_owner --dbname="$test_database" -Atc "SELECT concat(state,',',attem
 psql_owner --dbname="$test_database" -c 'DROP TRIGGER readiness_import_gate ON public.memberships; DROP FUNCTION public.readiness_gate();' >/dev/null
 echo 'PASS: worker killed mid-transaction; prior facts/notes/fingerprints unchanged; exact job remains executing attempt 1'
 readiness_phase=recover-exact-job
-readiness_eval "$runtime_role" "$test_tmp/app_password" recover
+if [ "$csv_recovery_rehearsal" = true ]; then
+  # Only the exact generated fixture, after proving the original worker and
+  # sessions are gone. Move its age past eligibility without a three-minute wait.
+  test "$(psql_owner --dbname="$test_database" -qAtc "UPDATE oban_jobs SET attempted_at=clock_timestamp()-interval '185 seconds' WHERE id=$readiness_job AND worker='GymIntel.Workers.ImportMemberships' AND queue='imports' AND state='executing' AND attempt=1 AND meta->>'csv_recovery_version'='1' RETURNING id")" = "$readiness_job"
+else
+  readiness_eval "$runtime_role" "$test_tmp/app_password" recover
+fi
 docker start "$runtime_container" >/dev/null
 readiness_wait_job "$readiness_job"
 test "$(psql_owner --dbname="$test_database" -Atc "SELECT concat(state,',',attempt) FROM oban_jobs WHERE id=$readiness_job")" = completed,2
+if [ "$csv_recovery_rehearsal" = true ]; then
+  echo 'PASS: automatic CSV recovery under the limited runtime role completed the same job on attempt two'
+fi
 readiness_replay=$(readiness_job_id interrupted.csv)
 case "$readiness_replay" in ''|*[!0-9]*) exit 1 ;; esac
 readiness_wait_job "$readiness_replay"

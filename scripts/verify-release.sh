@@ -16,6 +16,12 @@ if [ "$readiness_mode" = true ] && [ -z "${READINESS_RUN:-}" ]; then
   echo 'Readiness mode requires the isolated verify-readiness.sh wrapper' >&2
   exit 2
 fi
+csv_recovery_rehearsal=${CSV_RECOVERY_REHEARSAL:-false}
+case "$csv_recovery_rehearsal:$readiness_mode" in
+  false:*) ;;
+  true:true) ;;
+  *) echo 'CSV recovery rehearsal requires the isolated readiness wrapper' >&2; exit 2 ;;
+esac
 runtime_image="${RELEASE_IMAGE:-gym-intel-runtime:local}"
 owner_file="${RELEASE_TEST_OWNER_PASSWORD_FILE:-$project_dir/.secrets/postgres_password}"
 test -s "$owner_file"
@@ -216,6 +222,7 @@ docker run --detach --platform linux/arm64 --name "$runtime_container" \
   -e "DATABASE_HOST=$test_host" -e "DATABASE_PORT=$test_port" \
   -e "DATABASE_NAME=$test_database" -e "DATABASE_USER=$runtime_role" \
   -e DATABASE_PASSWORD_FILE=/run/secrets/app_password \
+  -e "CSV_IMPORT_RECOVERY_ENABLED=$csv_recovery_rehearsal" \
   -v "$test_tmp/app_password:/run/secrets/app_password:ro" \
   "$runtime_image" >/dev/null
 container_started=true

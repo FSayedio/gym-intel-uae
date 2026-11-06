@@ -205,6 +205,11 @@ The readiness rehearsal starts its own bounded PostgreSQL instance and generated
 worker, measures 1,000-row/replay/overlap imports, and kills only that test worker
 behind a deterministic transaction gate. Its explicit exact-job recovery is not
 automatic production orphan rescue. See [measurement and interruption limits](ci.md#bounded-setup-workload-and-interruption-rehearsal).
+
+The [opt-in CSV recovery protocol](csv_import_recovery.md) adds job-row ownership
+checks and bounded attempts for new CSV jobs. Automatic recovery defaults off;
+do not assume it is active because the code or tests exist. Legacy jobs and
+source-check jobs still require the existing reviewed manual procedure.
 See [test isolation](local_development.md#repeatable-tests) and [CI](ci.md).
 
 Expected: passing tests/checks and successful scoped cleanup; `git diff --check`

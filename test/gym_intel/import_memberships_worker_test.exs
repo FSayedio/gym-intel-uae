@@ -8,6 +8,8 @@ defmodule GymIntel.ImportMembershipsWorkerTest do
     job = ImportMemberships.new(%{"csv" => "test"}) |> Ecto.Changeset.apply_changes()
     assert job.queue == "imports"
     assert job.max_attempts == 3
+    assert job.meta["csv_recovery_version"] == 1
+    assert ImportMemberships.timeout(job) == 120_000
   end
 
   test "invalid CSV is cancelled rather than retried" do

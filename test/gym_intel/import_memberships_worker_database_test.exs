@@ -17,6 +17,15 @@ defmodule GymIntel.ImportMembershipsWorkerDatabaseTest do
       "\nTEST WORKER,,Synthetic plan,all_uae_branches,,100,1,,,https://example.com,,2026-09-12,TEST ONLY,,,,\n"
   end
 
+  defp perform_import(args) do
+    job =
+      ImportMemberships.new(args)
+      |> Ecto.Changeset.change(state: "executing", attempt: 1, attempted_at: DateTime.utc_now())
+      |> Repo.insert!()
+
+    ImportMemberships.perform(job)
+  end
+
   @tag :tmp_dir
   test "enqueue stores a snapshot, not a path to a mutable file", %{tmp_dir: dir} do
     path = Path.join(dir, "synthetic.csv")
@@ -30,16 +39,16 @@ defmodule GymIntel.ImportMembershipsWorkerDatabaseTest do
     assert Repo.aggregate(Membership, :count) == 0
 
     assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
-             perform_job(ImportMemberships, stored.args)
+             perform_import(stored.args)
 
     assert Repo.aggregate(Membership, :count) == 1
-    assert {:ok, :already_imported} = perform_job(ImportMemberships, stored.args)
+    assert {:ok, :already_imported} = perform_import(stored.args)
     assert Repo.aggregate(Membership, :count) == 1
   end
 
   test "invalid row cancels without inserting memberships" do
     invalid = String.replace(csv(), ",100,1,", ",100,,")
-    assert {:cancel, {:rows, [_]}} = perform_job(ImportMemberships, %{"csv" => invalid})
+    assert {:cancel, {:rows, [_]}} = perform_import(%{"csv" => invalid})
     assert Repo.aggregate(Membership, :count) == 0
   end
 
@@ -73,7 +82,7 @@ defmodule GymIntel.ImportMembershipsWorkerDatabaseTest do
 
   test "hardening errors cancel the worker without a partial import or fingerprint" do
     invalid = String.replace(csv(), ",100,1,", ",100.001,1,")
-    assert {:cancel, {:rows, [_]}} = perform_job(ImportMemberships, %{"csv" => invalid})
+    assert {:cancel, {:rows, [_]}} = perform_import(%{"csv" => invalid})
     assert Repo.aggregate(Membership, :count) == 0
     assert %{rows: [[0]]} = Repo.query!("SELECT count(*) FROM membership_imports")
   end
@@ -89,7 +98,7 @@ defmodule GymIntel.ImportMembershipsWorkerDatabaseTest do
     assert Repo.get!(Oban.Job, job.id).args == %{"csv" => contents}
 
     assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
-             perform_job(ImportMemberships, job.args)
+             perform_import(job.args)
   end
 
   test "legacy queued snapshots still execute after the CSV extension" do
@@ -99,7 +108,7 @@ defmodule GymIntel.ImportMembershipsWorkerDatabaseTest do
     legacy = header <> "\n" <> legacy_row <> "\n"
 
     assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
-             perform_job(ImportMemberships, %{"csv" => legacy})
+             perform_import(%{"csv" => legacy})
 
     record = Repo.one!(Membership)
     assert record.payment_structure == nil
@@ -110,7 +119,7 @@ defmodule GymIntel.ImportMembershipsWorkerDatabaseTest do
     contents = String.replace(csv(), "TEST ONLY,,", "TEST ONLY,prepaid_term,automatic")
 
     assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
-             perform_job(ImportMemberships, %{"csv" => contents})
+             perform_import(%{"csv" => contents})
 
     record = Repo.one!(Membership)
     assert record.payment_structure == "prepaid_term"
@@ -128,7 +137,7 @@ defmodule GymIntel.ImportMembershipsWorkerDatabaseTest do
       |> IO.iodata_to_binary()
 
     assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
-             perform_job(ImportMemberships, %{"csv" => legacy})
+             perform_import(%{"csv" => legacy})
 
     record = Repo.one!(Membership)
     assert record.payment_structure == "recurring"
@@ -138,7 +147,7 @@ defmodule GymIntel.ImportMembershipsWorkerDatabaseTest do
     classified = String.replace(current, "automatic,,", "automatic,included,30")
 
     assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
-             perform_job(ImportMemberships, %{"csv" => classified})
+             perform_import(%{"csv" => classified})
 
     assert record = Repo.get_by!(Membership, price_vat_status: "included")
     assert Decimal.equal?(record.admin_fee_aed, Decimal.new("30"))
