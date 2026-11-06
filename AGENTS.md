@@ -20,6 +20,26 @@
 - Never merge, enable auto-merge, force-push, discard work, expose credentials, recreate the repository, reinstall tools, or change global settings.
 - Do not claim tests or CI exist until they actually do.
 
+## Research, verification and review (ECC adaptations)
+
+- For a substantial feature, new dependency or reusable helper, read and use
+  [.agents/skills/ecc-search-first/SKILL.md](.agents/skills/ecc-search-first/SKILL.md).
+  Research existing repository/library solutions before custom code, then feed
+  unresolved decisions into the Matt Pocock checkpoint below. Do not reopen an
+  already-approved plan without new evidence.
+- After implementation and before a PR, use
+  [.agents/skills/ecc-verification/SKILL.md](.agents/skills/ecc-verification/SKILL.md)
+  for proportionate checks and explicit local/CI/deployment evidence, and
+  [.agents/skills/ecc-code-review/SKILL.md](.agents/skills/ecc-code-review/SKILL.md)
+  for concrete findings grounded in the changed code. Recheck corrective edits.
+- Keep command previews, one-question-at-a-time teaching, Before / Action /
+  After / Evidence, and learner-controlled merging. These skills do not grant
+  additional authority, install hooks, enable agents or change global settings.
+- These are project adaptations of ECC, not an installation of its full plugin.
+  Sources, exact revision and changes are in
+  [.agents/skills/UPSTREAM.ecc.json](.agents/skills/UPSTREAM.ecc.json);
+  MIT attribution is in [.agents/skills/LICENSE.ecc](.agents/skills/LICENSE.ecc).
+
 ## Feature-planning checkpoint (Matt Pocock's grill-me)
 
 - Before planning a substantial feature or PR, or when the learner asks to be grilled, read `.agents/skills/grill-me/SKILL.md` and its companion `.agents/skills/grilling/SKILL.md`. If the host has no separate Skill tool, load the companion instructions directly; do not pretend a tool invocation occurred.
