@@ -206,10 +206,13 @@ worker, measures 1,000-row/replay/overlap imports, and kills only that test work
 behind a deterministic transaction gate. Its explicit exact-job recovery is not
 automatic production orphan rescue. See [measurement and interruption limits](ci.md#bounded-setup-workload-and-interruption-rehearsal).
 
-The [opt-in CSV recovery protocol](csv_import_recovery.md) adds job-row ownership
-checks and bounded attempts for new CSV jobs. Automatic recovery defaults off;
-do not assume it is active because the code or tests exist. Legacy jobs and
-source-check jobs still require the existing reviewed manual procedure.
+The [CSV recovery protocol](csv_import_recovery.md) adds job-row ownership checks
+and bounded attempts for new CSV jobs. Kubernetes `prepare` explicitly enables
+it for the primary `gym-intel` namespace on every run, and disables it in
+disposable namespaces. The runtime's unset default and Compose remain opt-in.
+Verify the deployed revision and configuration rather than inferring activation
+from a passing test. Legacy jobs and source-check jobs still require the existing
+reviewed manual procedure.
 See [test isolation](local_development.md#repeatable-tests) and [CI](ci.md).
 
 Expected: passing tests/checks and successful scoped cleanup; `git diff --check`

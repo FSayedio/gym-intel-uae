@@ -33,9 +33,14 @@ for pair in postgres-scripts:postgres postgres-sql:priv grafana-datasources:graf
 done
 kube create configmap grafana-start --from-file=grafana-start.sh=grafana/start.sh --dry-run=client -o yaml | kube apply -f -
 source_checks_enabled=false
-if [ "$kube_namespace" = gym-intel ]; then source_checks_enabled=true; fi
+csv_recovery_enabled=false
+if [ "$kube_namespace" = gym-intel ]; then
+  source_checks_enabled=true
+  csv_recovery_enabled=true
+fi
 kube create configmap app-settings --from-literal=DATABASE_NAME=gym_intel_dev \
   --from-literal=SOURCE_CHECKS_ENABLED="$source_checks_enabled" \
+  --from-literal=CSV_IMPORT_RECOVERY_ENABLED="$csv_recovery_enabled" \
   --from-literal=DATABASE_USER=gym_intel_app --from-literal=DATABASE_HOST=postgres \
   --from-literal=DATABASE_PORT=5432 --from-literal=DATABASE_POOL_SIZE=5 \
   --from-literal=DATABASE_PASSWORD_FILE=/run/secrets/postgres_app_password \

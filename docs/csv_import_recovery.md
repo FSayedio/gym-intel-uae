@@ -1,4 +1,4 @@
-# CSV import recovery (opt-in; not enabled by this change)
+# CSV import recovery
 
 Before: an app interruption could leave a CSV job executing indefinitely and
 block the existing backup/update guards. Recovery required stopping the app and
@@ -48,15 +48,22 @@ protocol and are not automatically coordinated recovery paths.
   unresolved and check later. Do not remove backup/update guards to force progress.
 - Unmarked pre-upgrade jobs remain manual recovery cases. A marker is protocol
   versioning for cooperating application code, not an authentication boundary.
-- Only CSV_IMPORT_RECOVERY_ENABLED=true opts in. It defaults off in runtime;
-  this change adds no enabling value to Compose or Kubernetes manifests.
-  Source checks retain their separate SOURCE_CHECKS_ENABLED flag. Test config
-  disables automatic plugins even if these environment flags are present.
+- Only CSV_IMPORT_RECOVERY_ENABLED=true opts in. The runtime still defaults off
+  without that flag. Kubernetes `prepare` explicitly writes true for the primary
+  `gym-intel` namespace on every run, so upgrades retain the approved activation
+  without a manual ConfigMap patch. Disposable `gym-intel-test-*` namespaces get
+  false; Compose remains opt-in. Source checks retain their separate
+  SOURCE_CHECKS_ENABLED flag. Test config disables automatic plugins even if
+  these environment flags are present.
 - Submission/diagnostic processes continue explicitly disabling Oban plugins and
   queues. An isolated integration test starts the recovery process intentionally.
 
-Activation requires the ordinary reviewed build/deploy process and an explicit
-configuration change. This document is not evidence of live activation. The
+Activation requires the ordinary reviewed build/deploy process. The primary
+Kubernetes deployment's activation is declared in `scripts/kubernetes/deploy.sh`;
+`prepare` reapplies it rather than preserving arbitrary live ConfigMap edits.
+For an intentional long-term disable there, change that declared setting through
+review too; a one-off false patch will be replaced on the next preparation.
+This document is not evidence of live activation. The
 initial isolated measurement on 6 November 2026 imported 5,410 observations from
 a 999,999-byte synthetic CSV in 6,045 ms. This supports substantial headroom for
 the two-minute limit on the tested machine; it is not a throughput guarantee or
