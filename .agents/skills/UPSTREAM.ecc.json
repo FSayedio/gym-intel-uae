@@ -1,0 +1,23 @@
+{
+  "repository": "https://github.com/affaan-m/ECC",
+  "revision": "b38be6a7f6350964d59328b52f0624e1d1d552d1",
+  "adapted_on": "2026-11-06",
+  "license": "MIT",
+  "license_file": "LICENSE.ecc",
+  "adaptations": {
+    "ecc-search-first": {
+      "source": "skills/search-first/SKILL.md",
+      "changes": "Repository-first research; Hex/Elixir compatibility; retain learning and authorisation boundaries; no automatic delegation or installation."
+    },
+    "ecc-verification": {
+      "source": "skills/verification-loop/SKILL.md",
+      "changes": "Existing Elixir, browser and Kubernetes/Compose checks; proportionate verification; no invented coverage or security clearance; distinguish local, CI and deployed evidence."
+    },
+    "ecc-code-review": {
+      "source": "agents/code-reviewer.md",
+      "changes": "Convert reviewer instructions to a project skill; focus on concrete regressions and this pipeline; no model override, automatic delegation or merge authority."
+    }
+  },
+  "upstream_skill_files_modified": true,
+  "project_workflow_overrides": "../../AGENTS.md"
+}
