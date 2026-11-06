@@ -117,6 +117,14 @@ pauses Grafana so new mounted configuration is loaded on its next start. A faile
 upgrade should be investigated against the retained backup; this script does not
 silently roll back SQL or force an incompatible old image onto a new schema.
 
+`prepare` declares `CSV_IMPORT_RECOVERY_ENABLED=true` in the primary `gym-intel`
+ConfigMap on every run, alongside the source-check setting. No manual recovery
+flag patch is needed after upgrades. Disposable `gym-intel-test-*` namespaces
+receive false. The runtime's unset default and Compose behaviour remain opt-in.
+An intentional persistent disable in the primary namespace must update this
+declared deployment policy; a manual ConfigMap edit is overwritten by `prepare`.
+See [CSV recovery bounds and exclusions](csv_import_recovery.md).
+
 For PostgreSQL/Grafana pod replacement, delete only the identified pod, not its
 PVC or namespace. Kubernetes creates a replacement using the same claim. This
 is restart resilience, **not** high availability or a backup.
@@ -138,8 +146,9 @@ is deliberately not exposed as an everyday operator command.
   does not provide those guarantees.
 - Loopback access is local HTTP, not a public TLS deployment. Anonymous Viewer
   remains the approved local dashboard policy.
-- Readiness does not automatically rescue abandoned Oban jobs. Existing explicit
-  operator interruption-recovery rules still apply.
+- Readiness is separate from CSV job recovery. The primary deployment enables
+  bounded recovery for marked CSV jobs; legacy unmarked jobs and source-check
+  jobs still require the reviewed manual interruption-recovery procedure.
 - Source dates, offer caveats, unknown fees and lack of live fetching are unchanged.
 - Tests and CI are evidence for their recorded revision, not a claim that all
   possible crashes or migrations are safe. A PVC and a passing health endpoint
