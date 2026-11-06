@@ -140,4 +140,6 @@ jobs:
           CHECK_IMAGE="$CI_IMAGE" sh scripts/verify-recovery.sh
 
       - name: Reproduce fresh setup, measure workload and recover an interrupted import
+        env:
+          CSV_RECOVERY_REHEARSAL: 'true'
         run: CHECK_IMAGE="$CI_IMAGE" sh scripts/verify-readiness.sh

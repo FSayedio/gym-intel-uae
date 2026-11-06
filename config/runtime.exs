@@ -2,10 +2,19 @@ import Config
 
 # Explicit opt-in in the real deployment. Test/recovery release containers do
 # not contact external sites just because they start the application.
-unless System.get_env("SOURCE_CHECKS_ENABLED") == "true" and config_env() != :test do
-  config :gym_intel, Oban, plugins: false
-  if config_env() != :test, do: config(:gym_intel, Oban, queues: [imports: 1])
-end
+source_checks? = System.get_env("SOURCE_CHECKS_ENABLED") == "true" and config_env() != :test
+csv_recovery? = System.get_env("CSV_IMPORT_RECOVERY_ENABLED") == "true" and config_env() != :test
+
+plugins =
+  if source_checks?,
+    do: Application.fetch_env!(:gym_intel, Oban)[:plugins] || [],
+    else: []
+
+plugins = if csv_recovery?, do: plugins ++ [GymIntel.CSVImportRecovery.Plugin], else: plugins
+config :gym_intel, Oban, plugins: if(plugins == [], do: false, else: plugins)
+
+if not source_checks? and config_env() != :test,
+  do: config(:gym_intel, Oban, queues: [imports: 1])
 
 database_password =
   System.fetch_env!("DATABASE_PASSWORD_FILE")
