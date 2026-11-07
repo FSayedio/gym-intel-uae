@@ -43,6 +43,63 @@ defmodule GymIntel.MembershipTest do
     end
   end
 
+  test "name edges are trimmed for string and atom keys without changing internal text or notes" do
+    notes = " \tSource wording\n stays unchanged \n"
+
+    for atom_keys? <- [false, true],
+        field <- ~w(brand_name branch_name plan_name),
+        name <- ["Fitness  First", "نادي  اللياقة"] do
+      attrs =
+        valid_attrs()
+        |> Map.put(field, "\u00A0 \t" <> name <> "\r\n\u00A0")
+        |> Map.put("notes", notes)
+
+      attrs =
+        if atom_keys?,
+          do: Map.new(attrs, fn {key, value} -> {String.to_existing_atom(key), value} end),
+          else: attrs
+
+      result = changeset(attrs)
+      assert result.valid?, inspect(result.errors)
+      assert get_field(result, String.to_existing_atom(field)) == name
+      assert get_field(result, :notes) == notes
+    end
+  end
+
+  test "name padding is removed before enforcing the 255-code-point boundary" do
+    for field <- ~w(brand_name branch_name plan_name),
+        name <- [
+          String.duplicate("A", 255),
+          String.duplicate("ن", 255),
+          String.duplicate("e\u0301", 127) <> "e"
+        ] do
+      result = changeset(Map.put(valid_attrs(), field, " \t" <> name <> "\r\n "))
+      assert result.valid?, inspect(result.errors)
+      assert get_field(result, String.to_existing_atom(field)) == name
+
+      oversized = changeset(Map.put(valid_attrs(), field, " " <> name <> "A "))
+      refute oversized.valid?
+      assert Keyword.has_key?(oversized.errors, String.to_existing_atom(field))
+    end
+  end
+
+  test "trimmed blank names keep the existing required and optional rules" do
+    blank = "\u00A0 \t\r\n"
+
+    for field <- ~w(brand_name plan_name) do
+      assert_invalid(Map.put(valid_attrs(), field, blank), String.to_existing_atom(field))
+    end
+
+    assert_invalid(
+      Map.merge(valid_attrs(), %{"access_scope" => "single_branch", "branch_name" => blank}),
+      :branch_name
+    )
+
+    result = changeset(Map.put(valid_attrs(), "branch_name", blank))
+    assert result.valid?, inspect(result.errors)
+    assert get_field(result, :branch_name) == nil
+  end
+
   test "name fields preserve 255 PostgreSQL characters, including multibyte and combined text" do
     names = [
       String.duplicate("A", 255),
