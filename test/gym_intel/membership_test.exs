@@ -43,6 +43,43 @@ defmodule GymIntel.MembershipTest do
     end
   end
 
+  test "name fields preserve 255 PostgreSQL characters, including multibyte and combined text" do
+    names = [
+      String.duplicate("A", 255),
+      String.duplicate("ن", 255),
+      String.duplicate("e\u0301", 127) <> "e"
+    ]
+
+    for field <- ~w(brand_name branch_name plan_name), name <- names do
+      result = changeset(Map.put(valid_attrs(), field, name))
+      assert result.valid?, inspect(result.errors)
+      assert get_field(result, String.to_existing_atom(field)) == name
+    end
+  end
+
+  test "name fields reject over 255 code points even when grapheme counts fit" do
+    names = [String.duplicate("A", 256), String.duplicate("e\u0301", 128)]
+
+    for field <- ~w(brand_name branch_name plan_name), name <- names do
+      result = changeset(Map.put(valid_attrs(), field, name))
+      refute result.valid?
+
+      assert {"should be at most %{count} character(s)", opts} =
+               Keyword.fetch!(result.errors, String.to_existing_atom(field))
+
+      assert opts[:count] == 255
+      assert get_field(result, String.to_existing_atom(field)) == name
+    end
+  end
+
+  test "length validation does not require a branch for all-UAE offers" do
+    for branch <- [nil, "", "   "] do
+      result = changeset(Map.put(valid_attrs(), "branch_name", branch))
+      assert result.valid?, inspect(result.errors)
+      assert get_field(result, :branch_name) == nil
+    end
+  end
+
   test "single-branch offers require a branch name" do
     attrs = Map.put(valid_attrs(), "access_scope", "single_branch")
     assert_invalid(attrs, :branch_name)

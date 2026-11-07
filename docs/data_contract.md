@@ -40,6 +40,14 @@ The exact original 13-column and payment-era 15-column headers remain accepted
 for historical files and already-queued Oban snapshots. Their missing fields
 become NULL, not guessed defaults. Reordered, partial or other headers are rejected.
 
+`brand_name`, `branch_name` and `plan_name` each allow at most 255 Unicode code
+points, matching PostgreSQL's `varchar(255)` columns. This is not a byte limit:
+Arabic names can use more than 255 UTF-8 bytes and still fit. Combined characters
+can contain multiple code points. Names are not truncated or normalised to fit.
+An oversized name produces a row/field validation error and rejects the entire
+CSV before queueing; an already-queued invalid snapshot is cancelled before
+membership writes. The existing required/optional branch rules still apply.
+
 ### Payment and renewal classification
 
 These answer different questions: how is the access term paid, and does it renew

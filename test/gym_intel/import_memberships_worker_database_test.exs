@@ -52,6 +52,73 @@ defmodule GymIntel.ImportMembershipsWorkerDatabaseTest do
     assert Repo.aggregate(Membership, :count) == 0
   end
 
+  test "255-code-point names survive the worker and database without truncation" do
+    [header, row] = NimbleCSV.RFC4180.parse_string(csv(), skip_headers: false)
+    names = [String.duplicate("ن", 255), String.duplicate("e\u0301", 127) <> "e"]
+
+    rows =
+      for index <- 0..2, name <- names do
+        List.replace_at(row, index, name)
+      end
+
+    contents =
+      [header | rows]
+      |> NimbleCSV.RFC4180.dump_to_iodata()
+      |> IO.iodata_to_binary()
+
+    assert {:ok, {:imported, %{inserted: 6, skipped: 0}}} =
+             perform_import(%{"csv" => contents})
+
+    records = Repo.all(Membership)
+
+    for field <- [:brand_name, :branch_name, :plan_name], name <- names do
+      assert Enum.any?(records, &(Map.fetch!(&1, field) == name))
+    end
+  end
+
+  @tag :tmp_dir
+  test "a mixed CSV with an oversized name creates no job, membership, note or receipt", %{
+    tmp_dir: dir
+  } do
+    path = Path.join(dir, "oversized-name.csv")
+    [header, row] = NimbleCSV.RFC4180.parse_string(csv(), skip_headers: false)
+
+    for {field, index} <- [{:brand_name, 0}, {:branch_name, 1}, {:plan_name, 2}] do
+      contents =
+        [header, row, List.replace_at(row, index, String.duplicate("A", 256))]
+        |> NimbleCSV.RFC4180.dump_to_iodata()
+        |> IO.iodata_to_binary()
+
+      File.write!(path, contents)
+
+      assert {:error, {:rows, [%{record: 3, errors: errors}]}} =
+               ImportMemberships.enqueue_file(path)
+
+      assert errors[field] == ["should be at most 255 character(s)"]
+      assert Repo.aggregate(Oban.Job, :count) == 0
+      assert Repo.aggregate(Membership, :count) == 0
+      assert %{rows: [[0]]} = Repo.query!("SELECT count(*) FROM membership_notes")
+      assert %{rows: [[0]]} = Repo.query!("SELECT count(*) FROM membership_imports")
+    end
+  end
+
+  test "an already-queued snapshot with an oversized name is cancelled before any writes" do
+    [header, row] = NimbleCSV.RFC4180.parse_string(csv(), skip_headers: false)
+
+    contents =
+      [header, row, List.replace_at(row, 2, String.duplicate("e\u0301", 128))]
+      |> NimbleCSV.RFC4180.dump_to_iodata()
+      |> IO.iodata_to_binary()
+
+    assert {:cancel, {:rows, [%{record: 3, errors: errors}]}} =
+             perform_import(%{"csv" => contents})
+
+    assert errors.plan_name == ["should be at most 255 character(s)"]
+    assert Repo.aggregate(Membership, :count) == 0
+    assert %{rows: [[0]]} = Repo.query!("SELECT count(*) FROM membership_notes")
+    assert %{rows: [[0]]} = Repo.query!("SELECT count(*) FROM membership_imports")
+  end
+
   @tag :tmp_dir
   test "oversized or invalid-encoding files create no queued job or imported data", %{
     tmp_dir: dir
