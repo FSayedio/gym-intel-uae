@@ -3,6 +3,7 @@ defmodule GymIntel.Membership do
   import Ecto.Changeset
 
   @fields ~w(brand_name branch_name plan_name access_scope offer_type advertised_price_aed billing_period_months minimum_commitment_months joining_fee_aed source_url source_published_on observed_on notes payment_structure renewal_policy price_vat_status admin_fee_aed)a
+  @name_fields ~w(brand_name branch_name plan_name)a
   @money_fields ~w(advertised_price_aed joining_fee_aed admin_fee_aed)a
   @month_fields ~w(billing_period_months minimum_commitment_months)a
   @max_name_length 255
@@ -96,8 +97,16 @@ defmodule GymIntel.Membership do
       case Map.fetch(attrs, key) do
         {:ok, value} ->
           case raw_error(field, value) do
-            nil -> {safe_attrs, errors}
-            message -> {Map.delete(safe_attrs, key), [{field, message} | errors]}
+            nil when field in @name_fields and is_binary(value) ->
+              # Trim name edges only, after the UTF-8/NUL checks and before
+              # casting, required checks, length checks and observation keys.
+              {Map.put(safe_attrs, key, String.trim(value)), errors}
+
+            nil ->
+              {safe_attrs, errors}
+
+            message ->
+              {Map.delete(safe_attrs, key), [{field, message} | errors]}
           end
 
         :error ->

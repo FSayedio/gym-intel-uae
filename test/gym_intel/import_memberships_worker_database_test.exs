@@ -52,6 +52,69 @@ defmodule GymIntel.ImportMembershipsWorkerDatabaseTest do
     assert Repo.aggregate(Membership, :count) == 0
   end
 
+  @tag :tmp_dir
+  test "padded snapshots deduplicate names but retain raw bytes and genuinely different facts", %{
+    tmp_dir: dir
+  } do
+    [header, row] = NimbleCSV.RFC4180.parse_string(csv(), skip_headers: false)
+    notes = " \tSource notes\n remain unchanged \n"
+
+    row =
+      row
+      |> List.replace_at(1, "TEST BRANCH")
+      |> List.replace_at(3, "single_branch")
+      |> List.replace_at(12, notes)
+
+    encode = fn rows ->
+      [header | rows]
+      |> NimbleCSV.RFC4180.dump_to_iodata()
+      |> IO.iodata_to_binary()
+    end
+
+    assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
+             perform_import(%{"csv" => encode.([row])})
+
+    original = Repo.one!(Membership)
+
+    padded_row =
+      row
+      |> Enum.with_index()
+      |> Enum.map(fn {value, index} ->
+        if index in 0..2, do: "\u00A0 \t" <> value <> "\r\n ", else: value
+      end)
+
+    contents = encode.([padded_row])
+    path = Path.join(dir, "padded.csv")
+    File.write!(path, contents)
+    assert {:ok, job} = ImportMemberships.enqueue_file(path)
+    stored = Repo.get!(Oban.Job, job.id)
+    assert stored.args == %{"csv" => contents}
+
+    assert {:ok, {:imported, %{inserted: 0, skipped: 1}}} = perform_import(stored.args)
+    assert Repo.one!(Membership).id == original.id
+    assert Repo.one!(Membership).observation_key == original.observation_key
+    assert Repo.one!(Membership).notes == notes
+    assert %{rows: [[1]]} = Repo.query!("SELECT count(*) FROM membership_notes")
+    assert %{rows: [[2]]} = Repo.query!("SELECT count(*) FROM membership_imports")
+
+    changed_price = encode.([List.replace_at(padded_row, 5, "101")])
+
+    assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
+             perform_import(%{"csv" => changed_price})
+
+    price_record = Repo.get_by!(Membership, advertised_price_aed: Decimal.new("101"))
+    refute price_record.observation_key == original.observation_key
+
+    internal_space = encode.([List.replace_at(padded_row, 2, " Synthetic  plan ")])
+
+    assert {:ok, {:imported, %{inserted: 1, skipped: 0}}} =
+             perform_import(%{"csv" => internal_space})
+
+    assert Repo.get_by!(Membership, plan_name: "Synthetic  plan")
+    assert Repo.aggregate(Membership, :count) == 3
+    assert %{rows: [[4]]} = Repo.query!("SELECT count(*) FROM membership_imports")
+  end
+
   test "255-code-point names survive the worker and database without truncation" do
     [header, row] = NimbleCSV.RFC4180.parse_string(csv(), skip_headers: false)
     names = [String.duplicate("ن", 255), String.duplicate("e\u0301", 127) <> "e"]

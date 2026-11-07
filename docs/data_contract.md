@@ -43,10 +43,21 @@ become NULL, not guessed defaults. Reordered, partial or other headers are rejec
 `brand_name`, `branch_name` and `plan_name` each allow at most 255 Unicode code
 points, matching PostgreSQL's `varchar(255)` columns. This is not a byte limit:
 Arabic names can use more than 255 UTF-8 bytes and still fit. Combined characters
-can contain multiple code points. Names are not truncated or normalised to fit.
+can contain multiple code points. Names are never truncated to fit.
+Leading and trailing Unicode whitespace is removed from these three name fields
+before casting, required checks and length validation. Internal spacing, case
+and Unicode character composition remain unchanged; notes and other fields are
+not trimmed. The 255-code-point limit applies after removing this outer padding.
 An oversized name produces a row/field validation error and rejects the entire
 CSV before queueing; an already-queued invalid snapshot is cancelled before
 membership writes. The existing required/optional branch rules still apply.
+
+For example, `" TEST ONLY "` and `"TEST ONLY"` produce the same typed name. If all
+other identity fields match, row-level deduplication skips the repeated
+observation. `"Synthetic  plan"` keeps its two internal spaces and is distinct
+from `"Synthetic plan"`; changed prices also remain distinct observations.
+Oban snapshots and file fingerprints retain the original CSV bytes. This rule
+applies to new imports; it does not rewrite previously stored padded names.
 
 ### Payment and renewal classification
 

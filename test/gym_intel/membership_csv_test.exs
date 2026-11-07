@@ -55,6 +55,34 @@ defmodule GymIntel.MembershipCSVTest do
     assert record.joining_fee_aed == nil
   end
 
+  test "CSV name padding is removed while quoted notes and original internal spaces survive" do
+    notes = " \tSource notes\n keep this spacing \n"
+    [plain_row] = NimbleCSV.RFC4180.parse_string(row(notes), skip_headers: false)
+    plain_row = List.replace_at(plain_row, 1, "TEST BRANCH")
+
+    padded_row =
+      plain_row
+      |> Enum.with_index()
+      |> Enum.map(fn {value, index} ->
+        if index in 0..2, do: "\u00A0 \t" <> value <> "\r\n ", else: value
+      end)
+
+    contents =
+      [MembershipCSV.headers(), plain_row, padded_row]
+      |> NimbleCSV.RFC4180.dump_to_iodata()
+      |> IO.iodata_to_binary()
+
+    assert {:ok, [plain, padded]} = MembershipCSV.parse(contents)
+
+    for field <- [:brand_name, :branch_name, :plan_name] do
+      assert Map.fetch!(padded, field) == Map.fetch!(plain, field)
+    end
+
+    assert padded.plan_name == "Synthetic plan"
+    assert padded.notes == notes
+    assert padded.id == nil
+  end
+
   test "preserves quoted commas, escaped quotes and embedded newlines" do
     csv = header() <> row("Includes towel, and \"locker\"\nSecond line") <> "\n"
     assert {:ok, [record]} = MembershipCSV.parse(csv)
