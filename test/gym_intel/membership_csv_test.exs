@@ -154,6 +154,24 @@ defmodule GymIntel.MembershipCSVTest do
     assert errors.billing_period_months == ["can't be blank"]
   end
 
+  test "an oversized name identifies its row and field instead of returning partial records" do
+    [valid_row] = NimbleCSV.RFC4180.parse_string(row(), skip_headers: false)
+
+    for {field, index} <- [{:brand_name, 0}, {:branch_name, 1}, {:plan_name, 2}] do
+      invalid_row = List.replace_at(valid_row, index, String.duplicate("A", 256))
+
+      contents =
+        [MembershipCSV.headers(), valid_row, invalid_row]
+        |> NimbleCSV.RFC4180.dump_to_iodata()
+        |> IO.iodata_to_binary()
+
+      assert {:error, {:rows, [%{record: 3, reason: :validation, errors: errors}]}} =
+               MembershipCSV.parse(contents)
+
+      assert errors[field] == ["should be at most 255 character(s)"]
+    end
+  end
+
   test "reports malformed quoting and invalid UTF-8" do
     assert {:error, :malformed_csv} = MembershipCSV.parse(header() <> "\"unclosed")
     assert {:error, :invalid_utf8} = MembershipCSV.parse(<<255>>)

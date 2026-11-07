@@ -5,6 +5,7 @@ defmodule GymIntel.Membership do
   @fields ~w(brand_name branch_name plan_name access_scope offer_type advertised_price_aed billing_period_months minimum_commitment_months joining_fee_aed source_url source_published_on observed_on notes payment_structure renewal_policy price_vat_status admin_fee_aed)a
   @money_fields ~w(advertised_price_aed joining_fee_aed admin_fee_aed)a
   @month_fields ~w(billing_period_months minimum_commitment_months)a
+  @max_name_length 255
   # Decimal's default parser allows 34 significant digits. Reserve two for fils
   # rather than relaxing that dependency safeguard for oversized money inputs.
   @max_money_digits 32
@@ -48,6 +49,10 @@ defmodule GymIntel.Membership do
     |> cast(safe_attrs, @fields)
     |> add_input_errors(input_errors)
     |> validate_required([:brand_name, :plan_name, :access_scope, :source_url, :observed_on])
+    # PostgreSQL varchar(255) counts code points, not bytes or graphemes.
+    |> validate_length(:brand_name, max: @max_name_length, count: :codepoints)
+    |> validate_length(:branch_name, max: @max_name_length, count: :codepoints)
+    |> validate_length(:plan_name, max: @max_name_length, count: :codepoints)
     |> validate_inclusion(:access_scope, [
       "single_branch",
       "multiple_named_branches",
